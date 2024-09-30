@@ -1,0 +1,26 @@
+{
+  "name": "ocd2api",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "axios": "^1.7.7",
+    "bcrypt": "^5.1.1",
+    "dayjs": "^1.11.13",
+    "fastify": "^5.0.0",
+    "fastify-plugin": "^5.0.1",
+    "luxon": "^3.5.0",
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
