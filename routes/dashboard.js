@@ -10,7 +10,7 @@ async function dashboardRoutes(fastify, options) {
 
    const params = [id]; // Array to store query parameters (starting with riderId)
 
-   let query = `SELECT * FROM get_rider_goal_summary($1)`;
+   let query = `SELECT * FROM summarize_rides_and_goals($1)`;
    const client = await fastify.pg.connect();
 
    try {

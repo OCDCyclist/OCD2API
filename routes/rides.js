@@ -210,15 +210,14 @@ async function ridesRoutes(fastify, options) {
         }
 
         try {
-          const updateriderGoalSummary = 'SELECT * FROM get_rider_goal_summary($1)';
-          await client.query(updateriderGoalSummary, [riderId]);
-
+          // this updates data for metrics by year and month such as distance, time, elevation gain, etc.
+          const updaterideCummulatives = 'CALL public.metrics_by_year_month_calculate($1)';
+          await client.query(updaterideCummulatives, [riderId]);
         } catch (updateError) {
-          console.error('Error updating rider goals summarry:', updateError);
+            console.error('Error updating cummulatives', updateError);
           // More error handling later.
         }
-
-      });
+    });
     } catch (error) {
         console.error('Error inserting new ride:', error);
         reply.status(500).send({ error: 'An error occurred while inserting the ride' });

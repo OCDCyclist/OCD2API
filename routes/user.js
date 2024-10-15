@@ -76,6 +76,58 @@ async function userRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/weighttracker',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const params = [id];
+
+    let query = `
+      Select
+          date,
+          weight,
+          weight7,
+          weight30,
+          weight365,
+          bodyfatfraction,
+          bodyfatfraction7,
+          bodyfatfraction30,
+          bodyfatfraction365,
+          bodyh2ofraction,
+          bodyh2ofraction7,
+          bodyh2ofraction30,
+          bodyh2ofraction365
+      from
+          riderweight
+      WHERE riderid = $1
+      order by date desc
+      limit 1;
+    `;
+    const client = await fastify.pg.connect();
+
+    try {
+      const { rows } = await client.query(query, params);
+
+      // If no rider weight tracking is found, return an empty object
+      if (rows.length === 0) {
+        return reply.code(200).send({});
+      }
+
+      // Send the rider weight tracker data
+      return reply.code(200).send(rows[0]);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    } finally {
+      client.release();
+    }
+  });
+
   fastify.get('/bikes',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
 
