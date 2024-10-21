@@ -39,7 +39,8 @@ async function userRoutes(fastify, options) {
     }
 
     try {
-      // SQL query to insert new rider weight value
+      const deleteQuery = `Delete from riderweight where riderid = $1 and date = $2;`;
+
       const query = `
           INSERT INTO riderweight (
               riderid, date, weight, bodyfatfraction, bodyh2ofraction
@@ -49,10 +50,15 @@ async function userRoutes(fastify, options) {
       `;
       const client = await fastify.pg.connect();
 
-      // Execute the query with parameterized values
-      const values = [
-        riderId, isoDate ,weight, bodyfatfraction, bodyh2ofraction
+      const valuesDelete = [
+        riderId, isoDate
       ];
+
+      const values = [
+        riderId, isoDate, weight, bodyfatfraction, bodyh2ofraction
+      ];
+
+      const deleteResult = await client.query(deleteQuery, valuesDelete);
 
       const result = await client.query(query, values);
       const insertedWeight = result.rows[0];

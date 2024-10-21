@@ -1,8 +1,76 @@
 const dayjs = require('dayjs');
+const xss = require("xss");
 const { DateTime } = require('luxon'); // Add Luxon for date parsing
 
 async function ridesRoutes(fastify, options) {
-  // Define the rides routes
+
+  fastify.get('/rides/lastmonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    let queryConditions = 'WHERE riderid = $1';
+    const params = [id];
+
+    let query = `
+      SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim
+      FROM
+          Rides ${queryConditions}
+          and date >= date_trunc('day', NOW() - INTERVAL '30 days')
+          AND date < date_trunc('day', NOW() + INTERVAL '1 day')
+      ORDER BY date DESC;
+      `;
+
+    const client = await fastify.pg.connect();
+
+    try {
+      const { rows } = await client.query(query, params);
+
+      // If no rides are found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+    finally{
+      client.release();
+    }
+  });
+
   fastify.get('/rides',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
       const { riderId } = request.user;  // request.user is populated after JWT verification
       const { dateFrom, dateTo } = request.query;
@@ -28,8 +96,38 @@ async function ridesRoutes(fastify, options) {
       params.push(adjustedDateTo); // Add adjusted dateTo to the parameters
     }
 
-    // Adjust the SQL query with the filters applied
-    let query = `SELECT * FROM Rides ${queryConditions} ORDER BY date ASC`;
+    let query = `
+      SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim
+      FROM
+          Rides ${queryConditions}
+      ORDER BY date DESC
+      `;
+
     const client = await fastify.pg.connect();
 
     try {
@@ -52,41 +150,122 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
-  fastify.get('/ride',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+  fastify.get('/ride/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
-    const { rideid } = request.query;
+    const { rideid } = request.params;
 
-  const id = parseInt(riderId, 10);
-  if (isNaN(id)) {
-    return reply.code(400).send({ error: 'Invalid or missing riderId' });
-  }
-
-  // Validate dateFrom and dateTo if they are present
-  let queryConditions = 'WHERE riderid = $1 and rideid = $2'; // Initialize base condition
-  const params = [id, rideid]; // Array to store query parameters (starting with riderId)
-
-  // Adjust the SQL query with the filters applied
-  let query = `SELECT * FROM rides ${queryConditions} limit 1;`;
-  const client = await fastify.pg.connect();
-
-  try {
-    const { rows } = await client.query(query, params);
-
-    // If no ride is found, return an empty array
-    if (rows.length === 0) {
-      return reply.code(200).send([]);
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    // Send the filtered rides
-    return reply.code(200).send(rows[0]);
+    // Validate dateFrom and dateTo if they are present
+    let queryConditions = 'WHERE riderid = $1 and rideid = $2';
+    const params = [id, rideid]; // Array to store query parameters (starting with riderId)
 
-  } catch (err) {
-    console.error('Database error:', err);
-    return reply.code(500).send({ error: 'Database error' });
-  }
-  finally{
-    client.release();
-  }
+    // Adjust the SQL query with the filters applied
+    let query = `
+      SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim
+      FROM
+        rides ${queryConditions} limit 1;`;
+
+    const client = await fastify.pg.connect();
+
+    try {
+      const { rows } = await client.query(query, params);
+
+      // If no ride is found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows[0]);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+    finally{
+      client.release();
+    }
+  });
+
+  fastify.get('/ride/lookback',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const params = [id];
+
+    let query = `
+      Select
+        rideid,
+        category,
+        date,
+        distance,
+        speedavg,
+        elapsedtime,
+        elevationgain,
+        hravg,
+        poweravg
+        bikeid,
+        stravaid,
+        title,
+        comment
+      From
+        get_rider_lookback_this_day($1)
+      Order By date asc;
+      `;
+
+    const client = await fastify.pg.connect();
+
+    try {
+      const { rows } = await client.query(query, params);
+
+      // If no rides are found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+    finally{
+      client.release();
+    }
   });
 
   fastify.post('/addRide',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -152,8 +331,8 @@ async function ridesRoutes(fastify, options) {
     }
 
     // Sanitize string fields to protect against XSS
-    const sanitizedTitle = title;
-    const sanitizedComment = comment;
+    const sanitizedTitle = xss(title);
+    const sanitizedComment = xss(comment);
 
     // Convert elapsedTime from hh:mm:ss to seconds
     let elapsedTimeInSeconds;
@@ -194,33 +373,131 @@ async function ridesRoutes(fastify, options) {
       // After successfully inserting the new ride, update cummulatives
       setImmediate(async () => {
         try {
-          const updaterideMetrics = 'CALL public.updateRideMetrics($1)';
+          const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
           await client.query(updaterideMetrics, [riderId]);
         } catch (updateError) {
           console.error('Error updating ride metrics', updateError);
-          // More error handling later.
-        }
-
-        try {
-          const updaterideCummulatives = 'CALL public.update_cummulatives($1)';
-          await client.query(updaterideCummulatives, [riderId]);
-        } catch (updateError) {
-          console.error('Error updating cummulatives', updateError);
-          // More error handling later.
-        }
-
-        try {
-          // this updates data for metrics by year and month such as distance, time, elevation gain, etc.
-          const updaterideCummulatives = 'CALL public.metrics_by_year_month_calculate($1)';
-          await client.query(updaterideCummulatives, [riderId]);
-        } catch (updateError) {
-            console.error('Error updating cummulatives', updateError);
           // More error handling later.
         }
     });
     } catch (error) {
         console.error('Error inserting new ride:', error);
         reply.status(500).send({ error: 'An error occurred while inserting the ride' });
+    }
+  });
+
+  fastify.get('/ride/updateMetrics', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user; // Extracted from the JWT after authentication
+
+    try {
+
+      reply.status(200).send({status: true, message: "Metric update request received.  It may take up to 30 seconds to complete"});
+
+      const client = await fastify.pg.connect();
+
+      // Update all rider metrics after modification
+      setImmediate(async () => {
+        try {
+          const updateRideMetrics = 'CALL public.updateAllRiderMetrics($1)';
+          await client.query(updateRideMetrics, [riderId]);
+        } catch (updateError) {
+          console.error('Error updating ride metrics', updateError);
+        }
+      });
+    } catch (error) {
+      console.error('Error updating rider:', error);
+      reply.status(500).send({ error: 'An error occurred while updating rider metrics' });
+    }
+  });
+
+  fastify.post('/ride/:rideid/update', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user; // Extracted from the JWT after authentication
+    const { rideid } = request.params;
+    const updates = request.body;
+
+    // Define allowed fields for update
+    const allowedFields = [
+      'date', 'distance', 'speedavg', 'speedmax', 'cadence', 'hravg', 'hrmax',
+      'title', 'poweravg', 'powermax', 'bikeid', 'stravaid', 'comment',
+      'elevationgain', 'elevationloss', 'elapsedtime', 'powernormalized', 'trainer',
+      'tss', 'intensityfactor'
+    ];
+
+    // Filter out invalid fields
+    const sanitizedUpdates = {};
+    for (const key of Object.keys(updates)) {
+      if (allowedFields.includes(key)) {
+        sanitizedUpdates[key] = updates[key];
+      }
+    }
+
+    // Check if there are no valid fields to update
+    if (Object.keys(sanitizedUpdates).length === 0) {
+      return reply.status(400).send({ error: 'No valid fields provided for update' });
+    }
+
+    // Input validation
+    if (sanitizedUpdates.date) {
+      const parsedDate = DateTime.fromFormat(sanitizedUpdates.date, 'yyyy-MM-dd HH:mm:ss');
+      if (!parsedDate.isValid) {
+        return reply.status(400).send({ error: 'Invalid date format (expected YYYY-MM-DD HH:mm:ss)' });
+      }
+      sanitizedUpdates.date = parsedDate.toISO(); // Convert to ISO format
+    }
+
+    if (sanitizedUpdates.elapsedTime) {
+      try {
+        const convertElapsedTime = (timeString) => {
+          const [hours, minutes, seconds] = timeString.split(':').map(Number);
+          return hours * 3600 + minutes * 60 + seconds;
+        };
+        sanitizedUpdates.elapsedTime = convertElapsedTime(sanitizedUpdates.elapsedTime);
+      } catch (error) {
+        return reply.status(400).send({ error: 'Invalid elapsedTime format (expected hh:mm:ss)' });
+      }
+    }
+
+    // Sanitize string fields to protect against XSS
+    if (sanitizedUpdates.title) sanitizedUpdates.title = xss(sanitizedUpdates.title);
+    if (sanitizedUpdates.comment) sanitizedUpdates.comment = xss(sanitizedUpdates.comment);
+
+    // SQL update query
+    const setClause = Object.keys(sanitizedUpdates)
+      .map((key, index) => `${key.toLowerCase()} = $${index + 1}`)
+      .join(', ');
+
+    const query = `
+      UPDATE rides
+      SET ${setClause}
+      WHERE rideid = $${Object.keys(sanitizedUpdates).length + 1} AND riderid = $${Object.keys(sanitizedUpdates).length + 2}
+      RETURNING *;
+    `;
+
+    try {
+      const client = await fastify.pg.connect();
+      const values = [...Object.values(sanitizedUpdates), rideid, riderId];
+
+      const result = await client.query(query, values);
+      client.release();
+
+      if (result.rows.length === 0) {
+        return reply.status(404).send({ error: 'Ride not found or you do not have permission to update this ride' });
+      }
+
+      reply.status(200).send(result.rows[0]);
+
+      // Update all rider metrics after modification
+      setImmediate(async () => {
+        try {
+          const updateRideMetrics = 'CALL public.updateAllRiderMetrics($1)';
+          await client.query(updateRideMetrics, [riderId]);
+        } catch (updateError) {
+          console.error('Error updating ride metrics', updateError);
+        }
+      });
+    } catch (error) {
+      console.error('Error updating ride:', error);
+      reply.status(500).send({ error: 'An error occurred while updating the ride' });
     }
   });
 }

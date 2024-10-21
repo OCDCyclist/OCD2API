@@ -161,7 +161,7 @@ async function stravaRoutes(fastify, options) {
                         rideImperial.total_elevation_gain,
                         rideImperial.moving_time,
                         rideImperial.weighted_average_watts,
-                        rideImperial.trainer === 'VirtualRide' ? 1 : 0,
+                        rideImperial.type === 'VirtualRide' ? 1 : 0,
                         riderId
                       ]
                   );
@@ -206,31 +206,31 @@ async function stravaRoutes(fastify, options) {
         setImmediate(async () => {
             try {
                 // this updates ride metrics like intensity factor, TSS
-                const updaterideMetrics = 'CALL public.updateRideMetrics($1)';
+                const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
                 await client.query(updaterideMetrics, [riderId]);
             } catch (updateError) {
                 console.error('Error updating ride metrics', updateError);
                 // More error handling later.
             }
-
-            try {
-                // this updates cummulative values and run totals
-                const updaterideCummulatives = 'CALL public.update_cummulatives($1)';
-                await client.query(updaterideCummulatives, [riderId]);
-            } catch (updateError) {
-                console.error('Error updating cummulatives', updateError);
-                // More error handling later.
-            }
-
-            try {
-                // this updates data for metrics by year and month such as distance, time, elevation gain, etc.
-                const updaterideCummulatives = 'CALL public.metrics_by_year_month_calculate($1)';
-                await client.query(updaterideCummulatives, [riderId]);
-            } catch (updateError) {
-                console.error('Error updating cummulatives', updateError);
-                // More error handling later.
-            }
         });
+    });
+
+    fastify.get('/rider/viewRecent', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;  // request.user is populated after JWT verification
+
+        const stravaCredentials = await getStravaCredentials();
+        let tokens = await getStravaTokens(riderId);
+
+        //tokens.accesstoken = await refreshStravaToken(riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+
+        if (isTokenExpired(tokens)) {
+          tokens.accesstoken = await refreshStravaToken(riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+        }
+
+        // Retrieve recent rides from Strava
+        const recentRides = await getStravaRecentRides(tokens.accesstoken);
+
+        reply.send(recentRides);
     });
 
     // Route to redirect user to Strava's OAuth page
