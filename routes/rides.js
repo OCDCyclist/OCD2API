@@ -12,41 +12,89 @@ async function ridesRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    let queryConditions = 'WHERE riderid = $1';
     const params = [id];
 
     let query = `
       SELECT
-        rideid,
-        date,
-        distance,
-        speedavg,
-        speedmax,
-        cadence,
-        hravg,
-        hrmax,
-        title,
-        poweravg,
-        powermax,
-        bikeid,
-        stravaid,
-        comment,
-        elevationgain,
-        elapsedtime,
-        powernormalized,
-        intensityfactor,
-        tss,
-        matches,
-        trainer,
-        elevationloss,
-        datenotime,
-        device_name,
-        fracdim
+        a.rideid,
+        a.date,
+        a.distance,
+        a.speedavg,
+        a.speedmax,
+        a.cadence,
+        a.hravg,
+        a.hrmax,
+        a.title,
+        a.poweravg,
+        a.powermax,
+        a.bikeid,
+        coalesce(b.bikename, 'no bike') as bikename,
+        coalesce(b.stravaname, 'no bike') as stravaname,
+        a.stravaid,
+        a.comment,
+        a.elevationgain,
+        a.elapsedtime,
+        a.powernormalized,
+        a.intensityfactor,
+        a.tss,
+        a.matches,
+        a.trainer,
+        a.elevationloss,
+        a.datenotime,
+        a.device_name,
+        a.fracdim
       FROM
-          Rides ${queryConditions}
-          and date >= date_trunc('day', NOW() - INTERVAL '30 days')
-          AND date < date_trunc('day', NOW() + INTERVAL '1 day')
-      ORDER BY date DESC;
+        rides a left outer join bikes b
+        on a.bikeid = b.bikeid
+      WHERE a.riderid = $1
+        AND a.date >= date_trunc('day', NOW() - INTERVAL '30 days')
+        AND a.date < date_trunc('day', NOW() + INTERVAL '1 day')
+      ORDER BY a.date DESC;
+      `;
+
+    const client = await fastify.pg.connect();
+
+    try {
+      const { rows } = await client.query(query, params);
+
+      // If no rides are found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+    finally{
+      client.release();
+    }
+  });
+
+  fastify.post('/rides/history',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { years } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Validate input to ensure 'years' is an array of integers
+    if (!Array.isArray(years) || !years.every(Number.isInteger)) {
+      return reply.status(400).send({ error: 'Invalid year list. Must be an array of integers.' });
+    }
+
+    const params = [id, years];
+
+    let query = `
+      SELECT
+        *
+      FROM
+        get_rides_by_five_years($1, $2::int[]);
       `;
 
     const client = await fastify.pg.connect();
@@ -159,52 +207,55 @@ async function ridesRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    // Validate dateFrom and dateTo if they are present
-    let queryConditions = 'WHERE riderid = $1 and rideid = $2';
-    const params = [id, rideid]; // Array to store query parameters (starting with riderId)
+    const params = [id, rideid];
 
-    // Adjust the SQL query with the filters applied
     let query = `
       SELECT
-        rideid,
-        date,
-        distance,
-        speedavg,
-        speedmax,
-        cadence,
-        hravg,
-        hrmax,
-        title,
-        poweravg,
-        powermax,
-        bikeid,
-        stravaid,
-        comment,
-        elevationgain,
-        elapsedtime,
-        powernormalized,
-        intensityfactor,
-        tss,
-        matches,
-        trainer,
-        elevationloss,
-        datenotime,
-        device_name,
-        fracdim
+        a.rideid,
+        a.date,
+        a.distance,
+        a.speedavg,
+        a.speedmax,
+        a.cadence,
+        a.hravg,
+        a.hrmax,
+        a.title,
+        a.poweravg,
+        a.powermax,
+        a.bikeid,
+        coalesce(b.bikename, 'no bike') as bikename,
+        coalesce(b.stravaname, 'no bike') as stravaname,
+        a.stravaid,
+        a.comment,
+        a.elevationgain,
+        a.elapsedtime,
+        a.powernormalized,
+        a.intensityfactor,
+        a.tss,
+        a.matches,
+        a.trainer,
+        a.elevationloss,
+        a.datenotime,
+        a.device_name,
+        a.fracdim
       FROM
-        rides ${queryConditions} limit 1;`;
+        rides a left outer join bikes b
+        on a.bikeid = b.bikeid
+      WHERE
+        a.riderid = $1
+        and a.rideid = $2
+        limit 1;
+      `;
 
     const client = await fastify.pg.connect();
 
     try {
       const { rows } = await client.query(query, params);
 
-      // If no ride is found, return an empty array
       if (rows.length === 0) {
-        return reply.code(200).send([]);
+        return reply.code(200).send({});
       }
 
-      // Send the filtered rides
       return reply.code(200).send(rows[0]);
 
     } catch (err) {
