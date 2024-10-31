@@ -1,10 +1,13 @@
 const axios = require('axios');
+const { isEmpty } = require('../utility/general');
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
 const STRAVA_REDIRECT_URI = process.env.STRAVA_REDIRECT_URI;
+const powerFactor = 1.025;
 
 function removeTrailingZ(inputString) {
+    if( typeof(inputString) !== 'string' ) return '';
     if (inputString.endsWith("Z")) {
         return inputString.slice(0, -1);
     }
@@ -33,6 +36,47 @@ function convertToImperial(activity) {
         moving_time: activity.moving_time,
         weighted_average_watts: activity.weighted_average_watts,
         type: activity.type
+    }
+}
+
+function convertSegmentToImperial(segment) {
+    const METERS_TO_MILES = 0.000621371;
+    const METERS_TO_FEET = 3.28084;
+
+    return{
+        id: segment.id,
+        name: segment.name,
+        distance: (segment.distance * METERS_TO_MILES).toFixed(1),
+        average_grade: segment.average_grade,
+        maximum_grade: segment.maximum_grade,
+        elevation_high: (segment.elevation_high * METERS_TO_FEET).toFixed(0),
+        elevation_low: (segment.elevation_low * METERS_TO_FEET).toFixed(0),
+        start_latitude: segment.start_latlng[0],
+        start_longitude: segment.start_latlng[1],
+        end_latitude: segment.end_latlng[0],
+        end_longitude: segment.end_latlng[0],
+        climb_category: segment.climb_category,
+        starred_date:  removeTrailingZ(segment?.starred_date || null),
+        pr_time: segment.pr_time || 0,
+        pr_date: removeTrailingZ(segment?.athlete_pr_effort?.start_date_local || removeTrailingZ(segment?.starred_date || null))
+    }
+}
+
+function convertSegmentEffortToImperial(segmentEffort) {
+    const METERS_TO_MILES = 0.000621371;
+    return{
+        id: segmentEffort.segment.id,
+        stravaid: segmentEffort.activity.id,
+        elapsed_time: segmentEffort.elapsed_time,
+        moving_time: segmentEffort.moving_time,
+        start_date: removeTrailingZ(segmentEffort.start_date_local),
+        distance: (segmentEffort.distance * METERS_TO_MILES).toFixed(1),
+        start_index: segmentEffort.start_index,
+        end_index: segmentEffort.end_index,
+        average_cadence: (segmentEffort.average_cadence).toFixed(0),
+        average_watts: (segmentEffort.average_watts).toFixed(0),
+        average_heartrate: (segmentEffort.average_heartrate).toFixed(0),
+        max_heartrate:  (segmentEffort.max_heartrate).toFixed(0)
     }
 }
 
@@ -121,7 +165,15 @@ async function stravaRoutes(fastify, options) {
           headers: { Authorization: `Bearer ${accessToken}` },
           params: { per_page: limit }
         });
-        return response.data;  // This is an array of rides
+        return response.data;
+    }
+
+    async function getStravaStarredSegments(accessToken, limit = 100) {
+        const response = await axios.get('https://www.strava.com/api/v3/segments/starred', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: { per_page: limit }
+        });
+        return response.data;
     }
 
     async function getStravaActivityById(accessToken, stravaid) {
@@ -129,7 +181,7 @@ async function stravaRoutes(fastify, options) {
         const response = await axios.get(url, {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
-        return response.data;  // This is a single object
+        return response.data;
     }
 
     async function getStravaAthleteDetail(accessToken) {
@@ -209,13 +261,204 @@ async function stravaRoutes(fastify, options) {
         return ridesAdded;
     }
 
+    async function upsertStarredSegment(client, riderId, segment) {
+        if (isEmpty(segment) || 'id' in segment === false) { return false; }
+
+        const existingStarredSegment = await client.query('SELECT 1 FROM segmentsstrava WHERE riderid = $1 AND id = $2', [riderId, segment.id]);
+        if (existingStarredSegment.rowCount === 0) {
+            const segmentImperial = convertSegmentToImperial(segment);
+            try{
+                await client.query(`
+                    INSERT INTO segmentsstrava (
+                        riderid,
+                        id,
+                        name,
+                        distance,
+                        average_grade,
+                        maximum_grade,
+                        elevation_high,
+                        elevation_low,
+                        start_latitude,
+                        start_longitude,
+                        end_latitude,
+                        end_longitude,
+                        climb_category
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    `,  [
+                        riderId,
+                        segmentImperial.id,
+                        segmentImperial.name,
+                        segmentImperial.distance,
+                        segmentImperial.average_grade,
+                        segmentImperial.maximum_grade,
+                        segmentImperial.elevation_high,
+                        segmentImperial.elevation_low,
+                        segmentImperial.start_latitude,
+                        segmentImperial.start_longitude,
+                        segmentImperial.end_latitude,
+                        segmentImperial.end_longitude,
+                        segmentImperial.climb_category
+                        ]
+                    );
+                return true;
+            }
+            catch(err){
+                console.error('Database error inserting new segmentsstrava:', err);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    async function upsertStarredSegmentEffort(client, riderId, segmentEffort) {
+        if (isEmpty(segmentEffort) || 'id' in segmentEffort === false) { return false; }
+
+        const existingSegmentEffort = await client.query('SELECT 1 FROM segmentsstravaefforts WHERE riderid = $1 AND id = $2 AND stravaid = $3', [riderId, segmentEffort.segment.id, segmentEffort.activity.id]);
+        if (existingSegmentEffort.rowCount === 0) {
+            const segmentImperial = convertSegmentEffortToImperial(segmentEffort);
+            try{
+                await client.query(`
+                    INSERT INTO segmentsstravaefforts (
+                        riderid,
+                        id,
+                        stravaid,
+                        elapsed_time,
+                        moving_time,
+                        start_date,
+                        distance,
+                        start_index,
+                        end_index,
+                        average_cadence,
+                        average_watts,
+                        average_heartrate,
+                        max_heartrate
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    `,  [
+                        riderId,
+                        segmentImperial.id,
+                        segmentImperial.stravaid,
+                        segmentImperial.elapsed_time,
+                        segmentImperial.moving_time,
+                        segmentImperial.start_date,
+                        segmentImperial.distance,
+                        segmentImperial.start_index,
+                        segmentImperial.end_index,
+                        segmentImperial.average_cadence,
+                        segmentImperial.average_watts,
+                        segmentImperial.average_heartrate,
+                        segmentImperial.max_heartrate
+                        ]
+                    );
+                return true;
+            }
+            catch(err){
+                console.error('Database error inserting new segmentsstrava:', err);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    async function processRideSegments(client, riderId, stravaRideDetail) {
+        if( isEmpty(stravaRideDetail)) return false;
+
+        if('segment_efforts' in stravaRideDetail){
+            for (const key in stravaRideDetail.segment_efforts) {
+                if (stravaRideDetail.segment_efforts.hasOwnProperty(key)) {
+                    const segmentEffort = stravaRideDetail.segment_efforts[key];
+                    if( segmentEffort?.segment?.starred){
+                        // Make sure that the starred segment exists in OCD Cyclist db.
+                        if( await upsertStarredSegment(client, riderId, segmentEffort.segment)){
+                            // Now insert the segment effort
+                            await upsertStarredSegmentEffort(client, riderId, segmentEffort);
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+
+    async function updateStarredSegments(riderId, starredSegments) {
+        if( isEmpty(starredSegments) || !Array.isArray(starredSegments) || starredSegments.length === 0) return false;
+
+        const client = await fastify.pg.connect();
+
+        for( const segmentKey in starredSegments){
+            const segment = starredSegments[segmentKey];
+            const segmentImperial = convertSegmentToImperial(segment);
+            try{
+                await client.query(`
+                    INSERT INTO segmentsstrava (
+                        riderid,
+                        id,
+                        name,
+                        distance,
+                        average_grade,
+                        maximum_grade,
+                        elevation_high,
+                        elevation_low,
+                        start_latitude,
+                        start_longitude,
+                        end_latitude,
+                        end_longitude,
+                        climb_category,
+                        starred_date,
+                        pr_time,
+                        pr_date
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    ON CONFLICT (riderid, id)
+                    DO UPDATE SET
+                        name = EXCLUDED.name,
+                        distance = EXCLUDED.distance,
+                        average_grade = EXCLUDED.average_grade,
+                        maximum_grade = EXCLUDED.maximum_grade,
+                        elevation_high = EXCLUDED.elevation_high,
+                        elevation_low = EXCLUDED.elevation_low,
+                        start_latitude = EXCLUDED.start_latitude,
+                        start_longitude = EXCLUDED.start_longitude,
+                        end_latitude = EXCLUDED.end_latitude,
+                        end_longitude = EXCLUDED.end_longitude,
+                        climb_category = EXCLUDED.climb_category,
+                        starred_date = EXCLUDED.starred_date,
+                        pr_time = EXCLUDED.pr_time,
+                        pr_date = EXCLUDED.pr_date;
+
+                        `,  [
+                        riderId,
+                        segmentImperial.id,
+                        segmentImperial.name,
+                        segmentImperial.distance,
+                        segmentImperial.average_grade,
+                        segmentImperial.maximum_grade,
+                        segmentImperial.elevation_high,
+                        segmentImperial.elevation_low,
+                        segmentImperial.start_latitude,
+                        segmentImperial.start_longitude,
+                        segmentImperial.end_latitude,
+                        segmentImperial.end_longitude,
+                        segmentImperial.climb_category,
+                        segmentImperial.starred_date,
+                        segmentImperial.pr_time,
+                        segmentImperial.pr_date
+                        ]
+                    );
+            }
+            catch(err){
+                console.error('Database error inserting new segmentsstrava:', err);
+            }
+        }
+        client.release();
+    }
+
     fastify.get('/rider/updateStrava', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;  // request.user is populated after JWT verification
 
         const stravaCredentials = await getStravaCredentials();
         let tokens = await getStravaTokens(riderId);
-
-        //tokens.accesstoken = await refreshStravaToken(riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
 
         if (isTokenExpired(tokens)) {
           tokens.accesstoken = await refreshStravaToken(riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
@@ -225,15 +468,29 @@ async function stravaRoutes(fastify, options) {
         const recentRides = await getStravaRecentRides(tokens.accesstoken);
         const ridesAdded = await upsertRides(riderId, recentRides);
 
-        reply.send({ 
+        reply.send({
             success: true,
             ridesChecked: Array.isArray(recentRides) ? recentRides.length : 0,
-            ridesAdded: ridesAdded 
+            ridesAdded: ridesAdded
         });
 
-        // After successfully checking for new ride(s), update cummulatives and other things
-        const client = await fastify.pg.connect();
         setImmediate(async () => {
+            const client = await fastify.pg.connect();
+
+            // After successfully checking for new ride(s), check for segments and other details
+            try{
+                for( let i = 0; i < recentRides.length; i++){
+                    const ride = recentRides[i];
+                    // Retrieve recent ride details from Strava with segment and other information
+                    const stravaRideDetail = await getStravaActivityById(tokens.accesstoken, ride.id);
+                    await processRideSegments(client, riderId, stravaRideDetail);
+                }
+            }
+            catch (databaseError) {
+                console.error('Error updating segment efforts', databaseError);
+                // More error handling later.
+            }
+
             try {
                 // this updates ride metrics like intensity factor, TSS
                 const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
@@ -242,6 +499,29 @@ async function stravaRoutes(fastify, options) {
                 console.error('Error updating ride metrics', updateError);
                 // More error handling later.
             }
+            finally{
+                client.release();
+            }
+        });
+    });
+
+    fastify.get('/rider/updateStarredSegments', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;
+
+        const stravaCredentials = await getStravaCredentials();
+        let tokens = await getStravaTokens(riderId);
+
+        if (isTokenExpired(tokens)) {
+          tokens.accesstoken = await refreshStravaToken(riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+        }
+
+        // Retrieve recent rides from Strava
+        const starredSegmentsResponse = await getStravaStarredSegments(tokens.accesstoken);
+
+        reply.send({ starredSegmentsResponse });
+
+        setImmediate(async () => {
+            updateStarredSegments(riderId, starredSegmentsResponse);
         });
     });
 
@@ -312,7 +592,6 @@ async function stravaRoutes(fastify, options) {
 
         reply.send(stravaRideDetail);
     });
-
 
     // Route to redirect user to Strava's OAuth page
     fastify.get('/strava/auth/strava', (request, reply) => {

@@ -92,9 +92,41 @@ async function ridesRoutes(fastify, options) {
 
     let query = `
       SELECT
-        *
+        a.rideid,
+        a.date,
+        a.distance,
+        a.speedavg,
+        a.speedmax,
+        a.cadence,
+        a.hravg,
+        a.hrmax,
+        a.title,
+        a.poweravg,
+        a.powermax,
+        a.bikeid,
+        coalesce(b.bikename, 'no bike') as bikename,
+        coalesce(b.stravaname, 'no bike') as stravaname,
+        a.stravaid,
+        a.comment,
+        a.elevationgain,
+        a.elapsedtime,
+        a.powernormalized,
+        a.intensityfactor,
+        a.tss,
+        a.matches,
+        a.trainer,
+        a.elevationloss,
+        a.datenotime,
+        a.device_name,
+        a.fracdim
       FROM
-        get_rides_by_five_years($1, $2::int[]);
+        rides a left outer join bikes b
+        on a.bikeid = b.bikeid
+      WHERE
+        a.riderid = $1
+        AND EXTRACT(YEAR FROM a.date) = ANY($2)
+      ORDER BY
+        a.date ASC;
       `;
 
     const client = await fastify.pg.connect();
