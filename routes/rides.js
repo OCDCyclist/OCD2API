@@ -52,10 +52,8 @@ async function ridesRoutes(fastify, options) {
       ORDER BY a.date DESC;
       `;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rides are found, return an empty array
       if (rows.length === 0) {
@@ -68,9 +66,6 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    }
-    finally{
-      client.release();
     }
   });
 
@@ -129,10 +124,8 @@ async function ridesRoutes(fastify, options) {
         a.date ASC;
       `;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rides are found, return an empty array
       if (rows.length === 0) {
@@ -145,9 +138,6 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    }
-    finally{
-      client.release();
     }
   });
 
@@ -208,10 +198,8 @@ async function ridesRoutes(fastify, options) {
       ORDER BY date DESC
       `;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rides are found, return an empty array
       if (rows.length === 0) {
@@ -224,9 +212,6 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    }
-    finally{
-      client.release();
     }
   });
 
@@ -279,10 +264,8 @@ async function ridesRoutes(fastify, options) {
         limit 1;
       `;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       if (rows.length === 0) {
         return reply.code(200).send({});
@@ -293,9 +276,6 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    }
-    finally{
-      client.release();
     }
   });
 
@@ -329,10 +309,8 @@ async function ridesRoutes(fastify, options) {
       Order By date asc;
       `;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rides are found, return an empty array
       if (rows.length === 0) {
@@ -345,9 +323,6 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    }
-    finally{
-      client.release();
     }
   });
 
@@ -438,7 +413,6 @@ async function ridesRoutes(fastify, options) {
               poweravg, powermax, bikeid, stravaid, comment, elevationgain, elapsedtime,
               powernormalized, trainer;
       `;
-      const client = await fastify.pg.connect();
 
       // Execute the query with parameterized values
       const values = [
@@ -447,7 +421,7 @@ async function ridesRoutes(fastify, options) {
           elapsedTimeInSeconds, powerNormalized, trainer, riderId
       ];
 
-      const result = await client.query(query, values);
+      const result = await fastify.pg.query(query, values);
       const insertedRide = result.rows[0];
 
       // Return the newly inserted ride data
@@ -457,7 +431,7 @@ async function ridesRoutes(fastify, options) {
       setImmediate(async () => {
         try {
           const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
-          await client.query(updaterideMetrics, [riderId]);
+          await fastify.pg.query(updaterideMetrics, [riderId]);
         } catch (updateError) {
           console.error('Error updating ride metrics', updateError);
           // More error handling later.
@@ -476,13 +450,11 @@ async function ridesRoutes(fastify, options) {
 
       reply.status(200).send({status: true, message: "Metric update request received.  It may take up to 30 seconds to complete"});
 
-      const client = await fastify.pg.connect();
-
       // Update all rider metrics after modification
       setImmediate(async () => {
         try {
           const updateRideMetrics = 'CALL public.updateAllRiderMetrics($1)';
-          await client.query(updateRideMetrics, [riderId]);
+          await fastify.pg.query(updateRideMetrics, [riderId]);
         } catch (updateError) {
           console.error('Error updating ride metrics', updateError);
         }
@@ -557,11 +529,9 @@ async function ridesRoutes(fastify, options) {
     `;
 
     try {
-      const client = await fastify.pg.connect();
       const values = [...Object.values(sanitizedUpdates), rideid, riderId];
 
-      const result = await client.query(query, values);
-      client.release();
+      const result = await fastify.pg.query(query, values);
 
       if (result.rows.length === 0) {
         return reply.status(404).send({ error: 'Ride not found or you do not have permission to update this ride' });
@@ -573,7 +543,7 @@ async function ridesRoutes(fastify, options) {
       setImmediate(async () => {
         try {
           const updateRideMetrics = 'CALL public.updateAllRiderMetrics($1)';
-          await client.query(updateRideMetrics, [riderId]);
+          await fastify.pg.query(updateRideMetrics, [riderId]);
         } catch (updateError) {
           console.error('Error updating ride metrics', updateError);
         }

@@ -11,10 +11,9 @@ async function dashboardRoutes(fastify, options) {
    const params = [id]; // Array to store query parameters (starting with riderId)
 
    let query = `SELECT * FROM summarize_rides_and_goals($1)`;
-   const client = await fastify.pg.connect();
 
    try {
-    const { rows } = await client.query(query, params);
+    const { rows } = await fastify.pg.query(query, params);
 
      // If no rider summaryfound, return an empty array
      if (rows.length === 0) {
@@ -27,9 +26,6 @@ async function dashboardRoutes(fastify, options) {
    } catch (err) {
      console.error('Database error:', err);
      return reply.code(500).send({ error: 'Database error' });
-   }
-   finally{
-    client.release();
    }
  });
 }

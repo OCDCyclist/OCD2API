@@ -1,4 +1,4 @@
-async function dashboardRoutes(fastify, options) {
+async function ocdRoutes(fastify, options) {
   // Define the dashboard route
   fastify.get('/ocds/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
@@ -11,10 +11,9 @@ async function dashboardRoutes(fastify, options) {
    const params = [id]; // Array to store query parameters (starting with riderId)
 
    let query = `SELECT * FROM get_rider_cummulatives_recent($1)`;
-   const client = await fastify.pg.connect();
 
    try {
-    const { rows } = await client.query(query, params);
+    const { rows } = await fastify.pg.query(query, params);
 
      // If no rider cummulatives are found, return an empty array
      if (rows.length === 0) {
@@ -27,9 +26,6 @@ async function dashboardRoutes(fastify, options) {
    } catch (err) {
      console.error('Database error:', err);
      return reply.code(500).send({ error: 'Database error' });
-   }
-   finally{
-    client.release();
    }
   });
 
@@ -44,10 +40,9 @@ async function dashboardRoutes(fastify, options) {
       const params = [id];
 
       let query = `SELECT * FROM get_rider_metrics_by_year_month($1)`;
-      const client = await fastify.pg.connect();
 
       try {
-        const { rows } = await client.query(query, params);
+        const { rows } = await fastify.pg.query(query, params);
 
         // If no rider cummulatives are found, return an empty array
         if (rows.length === 0) {
@@ -60,8 +55,6 @@ async function dashboardRoutes(fastify, options) {
       } catch (err) {
         console.error('Database error:', err);
         return reply.code(500).send({ error: 'Database error' });
-      } finally {
-        client.release();
       }
   });
 
@@ -76,10 +69,9 @@ async function dashboardRoutes(fastify, options) {
       const params = [id];
 
       let query = `SELECT * FROM get_rider_metrics_by_year_dow($1)`;
-      const client = await fastify.pg.connect();
 
       try {
-        const { rows } = await client.query(query, params);
+        const { rows } = await fastify.pg.query(query, params);
 
         // If no rider cummulatives are found, return an empty array
         if (rows.length === 0) {
@@ -92,8 +84,6 @@ async function dashboardRoutes(fastify, options) {
       } catch (err) {
         console.error('Database error:', err);
         return reply.code(500).send({ error: 'Database error' });
-      } finally {
-        client.release();
       }
   });
 
@@ -108,10 +98,9 @@ async function dashboardRoutes(fastify, options) {
     const params = [id];
 
     let query = `SELECT * FROM get_rider_metrics_by_month_dom($1)`;
-    const client = await fastify.pg.connect();
 
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rider cummulatives are found, return an empty array
       if (rows.length === 0) {
@@ -124,11 +113,9 @@ async function dashboardRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    } finally {
-      client.release();
     }
   });
 
 }
 
-module.exports = dashboardRoutes;
+module.exports = ocdRoutes;

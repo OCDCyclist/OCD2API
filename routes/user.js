@@ -1,4 +1,6 @@
 const { DateTime } = require('luxon'); // Add Luxon for date parsing
+const { getTags, addTag, removeTag, assignTags} = require('../db/dbTagQueries');
+const {isRiderId, isLocationId, isAssignmentId, isValidTagArray} = require('../utility/general')
 
 async function userRoutes(fastify, options) {
   // Define the user routes
@@ -12,6 +14,10 @@ async function userRoutes(fastify, options) {
       bodyh2ofraction,
     } = request.body;
 
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
 
     // Input validation
     if (
@@ -48,8 +54,6 @@ async function userRoutes(fastify, options) {
               $1, $2, $3, $4, $5
           ) RETURNING riderid, date, weight, bodyfatfraction, bodyh2ofraction;
       `;
-      const client = await fastify.pg.connect();
-
       const valuesDelete = [
         riderId, isoDate
       ];
@@ -58,19 +62,19 @@ async function userRoutes(fastify, options) {
         riderId, isoDate, weight, bodyfatfraction, bodyh2ofraction
       ];
 
-      const deleteResult = await client.query(deleteQuery, valuesDelete);
+      const deleteResult = await fastify.pg.query(deleteQuery, valuesDelete);
 
-      const result = await client.query(query, values);
+      const result = await fastify.pg.query(query, values);
       const insertedWeight = result.rows[0];
 
       // Return the newly inserted ride data
-      reply.status(201).send(insertedWeight);
+      reply.status(200).send(insertedWeight);
 
       // After successfully inserting the weight, update cummulatives
       setImmediate(async () => {
         try {
           const updateCummulativesQuery = 'CALL public.update_riderweight_avg($1)';
-          await client.query(updateCummulativesQuery, [riderId]);
+          await fastify.pg.query(updateCummulativesQuery, [riderId]);
         } catch (updateError) {
           console.error('Error updating cummulatives:', updateError);
           // More error handling later.
@@ -113,10 +117,9 @@ async function userRoutes(fastify, options) {
       order by date desc
       limit 1;
     `;
-    const client = await fastify.pg.connect();
 
     try {
-      const { rows } = await client.query(query, params);
+      const { rows } = await fastify.pg.query(query, params);
 
       // If no rider weight tracking is found, return an empty object
       if (rows.length === 0) {
@@ -129,41 +132,163 @@ async function userRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
-    } finally {
-      client.release();
     }
   });
 
   fastify.get('/bikes',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
 
-  const id = parseInt(riderId, 10);
-  if (isNaN(id)) {
-    return reply.code(400).send({ error: 'Invalid or missing riderId' });
-  }
-
-  let query = `Select bikeid, bikename, stravaname, isdefault from bikes where riderid = $1 and retired = 0;`;
-  const client = await fastify.pg.connect();
-  const params = [id]; // Array to store query parameters (starting with riderId)
-
-  try {
-    const { rows } = await client.query(query, params);
-
-    // If no bikes are found, return an empty array
-    if (rows.length === 0) {
-      return reply.code(200).send([]);
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    // Send the filtered rides
-    return reply.code(200).send(rows);
+    let query = `Select bikeid, bikename, stravaname, isdefault from bikes where riderid = $1 and retired = 0;`;
+    const params = [id]; // Array to store query parameters (starting with riderId)
 
-  } catch (err) {
-    console.error('Database error:', err);
-    return reply.code(500).send({ error: 'Database error' });
-  }
-  finally{
-    client.release();
-  }
+    try {
+      const { rows } = await fastify.pg.query(query, params);
+
+      // If no bikes are found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/user/tags',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const tags = await getTags(fastify, riderId);
+      return reply.code(200).send(tags);
+
+    } catch (error) {
+      console.error(`Error retrieving tags for riderid ${riderId}: `, error);
+      return reply.code(500).send({ error: `Error retrieving tags for riderid ${riderId}: ${error.message}}` });
+    }
+  });
+
+  fastify.post('/user/addTag',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const {
+      name,
+      description
+    } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Input validation
+    if (
+      name === null || description === null
+    ) {
+      return reply.status(400).send({ error: 'Missing one or more required fields' });
+    }
+
+    const invalidItems = [];
+    // Validate the name is populated and description is at least a blank string
+    if ( typeof(name) !== 'string' || name.trim().length === 0 || name.trim().length > 30) {
+      invalidItems.push('Please provide a valid tag name')
+    }
+    if ( typeof(description) !== 'string' || description.trim().length > 255 ) {
+      invalidItems.push('Please provide a description shorter than 255 characters or blank if not required')
+    }
+
+    if(invalidItems.length > 0){
+      return reply.status(400).send({ error: invalidItems.join(', ') });
+    }
+
+    try {
+      const tag = await addTag(fastify, riderId, name, description);
+      return reply.code(200).send(tag.rows.length > 0 ? tag.rows[0] : null);
+
+    } catch (error) {
+      console.error(`Error adding tag for riderid ${riderId}: `, error);
+      return reply.code(500).send({ error: `Error adding tag for riderid ${riderId}: ${error.message}` });
+    }
+
+  });
+
+  fastify.post('/user/saveTagAssignments',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const {
+      locationId,
+      assignmentId,
+      tags
+    } = request.body;
+
+    if (!isRiderId(riderId)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    if (!isLocationId(locationId)) {
+      return reply.code(400).send({ error: 'Invalid or missing locationId' });
+    }
+
+    if (!isAssignmentId(assignmentId)) {
+      return reply.code(400).send({ error: 'Invalid or missing locationId' });
+    }
+
+    if (!isValidTagArray(tags)) {
+      return reply.code(400).send({ error: 'Tags must be an array of strings' });
+    }
+
+    try {
+      const tagsAdded = await assignTags(fastify, riderId, locationId, assignmentId, tags);
+      return reply.code(200).send(tagsAdded.rows.length > 0 ? tagsAdded.rows : null);
+    } catch (error) {
+        console.error(`Error adding tag for riderid ${riderId}: `, error);
+        return reply.code(500).send({ error: `Error adding tag for riderid ${riderId}: ${error.message}` });
+    }
+  });
+
+
+  fastify.delete('/user/removeTag',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const {
+      name
+    } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const invalidItems = [];
+    // Validate the name is populated.
+    if ( typeof(name) !== 'string' || name.trim().length === 0 || name.trim().length > 30) {
+      invalidItems.push('Please provide a valid tag name that you want to delete')
+    }
+
+    if(invalidItems.length > 0){
+      return reply.status(400).send({ error: invalidItems.join(', ') });
+    }
+
+    try {
+      const result = await removeTag(fastify, riderId, name);
+
+      return reply.code(200).send(result);
+
+    } catch (error) {
+      console.error(`Error adding tag for riderid ${riderId}: `, error);
+      return reply.code(500).send({ error: `Error adding tag for riderid ${riderId}: ${error.message}` });
+    }
+
   });
 }
 

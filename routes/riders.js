@@ -44,8 +44,6 @@ async function ridersRoutes(fastify, options) {
       return reply.code(400).send({ error: 'password must be longer than seven characters.' });
     }
 
-    const client = await fastify.pg.connect();
-
     try {
       // Check if the username or email already exists.
       const checkExistsQuery = `
@@ -55,7 +53,7 @@ async function ridersRoutes(fastify, options) {
       OR lower(email) = lower($2)
       `;
 
-      const checkExistsResult = await client.query(checkExistsQuery, [
+      const checkExistsResult = await fastify.pg.query(checkExistsQuery, [
         username.trim(),
         email.trim()
       ]);
@@ -75,7 +73,7 @@ async function ridersRoutes(fastify, options) {
       `;
 
       // Use parameterized queries to insert the values
-      const result = await client.query(addRiderSql, [
+      const result = await fastify.pg.query(addRiderSql, [
         username.trim(),
         email.trim(),
         hashedPassword
@@ -84,9 +82,6 @@ async function ridersRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error registering user:', err);
       return reply.code(500).send({ error: 'Database error registring user:' });
-    }
-    finally{
-     client.release();
     }
   });
 
@@ -117,10 +112,8 @@ async function ridersRoutes(fastify, options) {
     // Retrieve the user hashed password
     const retrieveUserInfoQuery = `SELECT riderid, username, password FROM riders WHERE username = $1`;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const checkExistsResult = await client.query(retrieveUserInfoQuery, [
+      const checkExistsResult = await fastify.pg.query(retrieveUserInfoQuery, [
         username
       ]);
 
@@ -148,9 +141,6 @@ async function ridersRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error logging in user:', err);
       return reply.code(500).send({ error: 'Database error logging in user' });
-    }
-    finally{
-     client.release();
     }
   });
 
@@ -198,10 +188,8 @@ async function ridersRoutes(fastify, options) {
     // Retrieve the user's hashed password
     const retrieveUserInfoQuery = `SELECT riderid, username, password FROM riders WHERE riderId = $1`;
 
-    const client = await fastify.pg.connect();
-
     try {
-      const checkExistsResult = await client.query(retrieveUserInfoQuery, [
+      const checkExistsResult = await fastify.pg.query(retrieveUserInfoQuery, [
         riderId
       ]);
 
@@ -234,7 +222,7 @@ async function ridersRoutes(fastify, options) {
       const values = [hashedNewPassword, riderId];
 
       // Execute the query
-      const result = await client.query(updatePasswordSql, values);
+      const result = await fastify.pg.query(updatePasswordSql, values);
       if( result.rows.length > 0){
         reply.send({ message: 'Password updated successfully' });
       }
@@ -244,10 +232,6 @@ async function ridersRoutes(fastify, options) {
       console.error('Database error updating user password:', err);
       return reply.code(500).send({ error: 'Database error updating user password' });
     }
-    finally{
-     client.release();
-    }
-
   });
 }
 

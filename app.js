@@ -43,6 +43,7 @@ fastify.register(require('./routes/rides'));
 fastify.register(require('./routes/ocds'));
 fastify.register(require('./routes/riders'));
 fastify.register(require('./routes/strava'));
+fastify.register(require('./routes/segments'));
 fastify.register(require('./routes/user'));
 fastify.register(require('./routes/check'));
 
@@ -56,7 +57,7 @@ fastify.post('/token', (request, reply) => {
 // Start server
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000 });
+    await fastify.listen({ port: 3000, host: '0.0.0.0' });
     console.log('Server is running on http://localhost:3000');
   } catch (err) {
     fastify.log.error(err);
