@@ -1,3 +1,6 @@
+const { getStarredSegments,
+} = require('../db/dbQueries');
+
 async function segmentRoutes(fastify, options) {
   // Define the segment routes
 
@@ -9,19 +12,13 @@ async function segmentRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    const params = [id];
-
-    const query = `SELECT * FROM get_segmentsstrava_data_withtags($1)`;
-
     try {
-      const { rows } = await fastify.pg.query(query, params);
+      const result = await getStarredSegments(fastify, riderId)
 
-      if (rows.length === 0) {
-        return reply.code(200).send([]);
+      if (Array.isArray(result)) {
+        return reply.code(200).send(result);
       }
-
-      return reply.code(200).send(rows);
-
+      return reply.code(200).send([]);
     } catch (err) {
       console.error('Database error for get_segmentsstrava_data_withtags:', err);
       return reply.code(500).send({ error: 'Database error for get_segmentsstrava_data_withtags' });

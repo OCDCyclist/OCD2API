@@ -1,3 +1,7 @@
+const {
+  getDashboard,
+} = require('../db/dbQueries');
+
 async function dashboardRoutes(fastify, options) {
   // Define the dashboard route
   fastify.get('/dashboard/riderSummary',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -8,20 +12,10 @@ async function dashboardRoutes(fastify, options) {
      return reply.code(400).send({ error: 'Invalid or missing riderId' });
    }
 
-   const params = [id]; // Array to store query parameters (starting with riderId)
-
-   let query = `SELECT * FROM summarize_rides_and_goals($1)`;
-
    try {
-    const { rows } = await fastify.pg.query(query, params);
+    const dashboard = await getDashboard(fastify, riderId);
 
-     // If no rider summaryfound, return an empty array
-     if (rows.length === 0) {
-       return reply.code(200).send([]);
-     }
-
-     // Send the rider summary
-     return reply.code(200).send(rows[0]);
+    return reply.code(200).send(dashboard);
 
    } catch (err) {
      console.error('Database error:', err);

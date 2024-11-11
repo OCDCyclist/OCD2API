@@ -1,3 +1,10 @@
+const {
+  getCummulatives,
+  getYearAndMonth,
+  getYearAndDOW,
+  getMonthAndDOM,
+} = require('../db/dbQueries');
+
 async function ocdRoutes(fastify, options) {
   // Define the dashboard route
   fastify.get('/ocds/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -8,20 +15,14 @@ async function ocdRoutes(fastify, options) {
      return reply.code(400).send({ error: 'Invalid or missing riderId' });
    }
 
-   const params = [id]; // Array to store query parameters (starting with riderId)
-
-   let query = `SELECT * FROM get_rider_cummulatives_recent($1)`;
-
    try {
-    const { rows } = await fastify.pg.query(query, params);
+    const result = await getCummulatives(fastify, riderId);
 
-     // If no rider cummulatives are found, return an empty array
-     if (rows.length === 0) {
+     if (!Array.isArray(result)) {
        return reply.code(200).send([]);
      }
 
-     // Send the rider summary
-     return reply.code(200).send(rows);
+     return reply.code(200).send(result);
 
    } catch (err) {
      console.error('Database error:', err);
@@ -37,21 +38,14 @@ async function ocdRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Invalid or missing riderId' });
       }
 
-      const params = [id];
-
-      let query = `SELECT * FROM get_rider_metrics_by_year_month($1)`;
-
       try {
-        const { rows } = await fastify.pg.query(query, params);
+        const result = await getYearAndMonth(fastify, riderId);
 
-        // If no rider cummulatives are found, return an empty array
-        if (rows.length === 0) {
+        if (!Array.isArray(result)) {
           return reply.code(200).send([]);
         }
 
-        // Send the rider summary
-        return reply.code(200).send(rows);
-
+        return reply.code(200).send(result);
       } catch (err) {
         console.error('Database error:', err);
         return reply.code(500).send({ error: 'Database error' });
@@ -66,21 +60,14 @@ async function ocdRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Invalid or missing riderId' });
       }
 
-      const params = [id];
-
-      let query = `SELECT * FROM get_rider_metrics_by_year_dow($1)`;
-
       try {
-        const { rows } = await fastify.pg.query(query, params);
+        const result = await getYearAndDOW(fastify, riderId);
 
-        // If no rider cummulatives are found, return an empty array
-        if (rows.length === 0) {
+        if (!Array.isArray(result)) {
           return reply.code(200).send([]);
         }
 
-        // Send the rider summary
-        return reply.code(200).send(rows);
-
+        return reply.code(200).send(result);
       } catch (err) {
         console.error('Database error:', err);
         return reply.code(500).send({ error: 'Database error' });
@@ -95,22 +82,15 @@ async function ocdRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    const params = [id];
-
-    let query = `SELECT * FROM get_rider_metrics_by_month_dom($1)`;
-
     try {
-      const { rows } = await fastify.pg.query(query, params);
+      const result = await getMonthAndDOM(fastify, riderId);
 
-      // If no rider cummulatives are found, return an empty array
-      if (rows.length === 0) {
+      if (!Array.isArray(result)) {
         return reply.code(200).send([]);
       }
 
-      // Send the rider summary
-      return reply.code(200).send(rows);
-
-    } catch (err) {
+      return reply.code(200).send(result);
+  } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
     }

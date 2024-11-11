@@ -1,4 +1,5 @@
-const { isRiderId, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
+const dayjs = require('dayjs');
+const { isRiderId, isRideId, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
 const { getStravaSegmentById, convertGearIdToOCD } = require('../db/stravaRideData');
 const {
     convertToImperial,
@@ -17,7 +18,7 @@ const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    if( !isSegmentId(riderId)){
+    if( !isSegmentId(segmentId)){
         throw new TypeError("Invalid parameter: segmentId must be an integer");
     }
 
@@ -33,8 +34,33 @@ const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
         }
 
         return rows[0].earliestdate || null;
-    } catch (err) {
+    } catch (error) {
         throw new Error(`Database error fetching getFirstSegmentEffortDate with riderId ${riderId} segmentId ${segmentId}: ${error.message}`);//th
+    }
+}
+
+const getStarredSegments = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM get_segmentsstrava_data_withtags($1)`;
+    const params = [riderId];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getStarredSegments for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getStarredSegments with riderId ${riderId}: ${error.message}`);//th
     }
 }
 
@@ -480,8 +506,386 @@ const getWeightTrackerData = async (fastify, riderId) =>{
     }
 }
 
+const getCummulatives = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM get_rider_cummulatives_recent($1)`;
+    const params = [riderId];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getCummulatives for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getCummulatives with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getYearAndMonth = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM get_rider_metrics_by_year_month($1)`;
+    const params = [riderId];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getYearAndMonth for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getYearAndMonth with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getYearAndDOW = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM get_rider_metrics_by_year_dow($1)`;
+    const params = [riderId];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getYearAndDOW for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getYearAndDOW with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getMonthAndDOM = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM get_rider_metrics_by_month_dom($1)`;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getMonthAndDOM for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getMonthAndDOM with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getDashboard = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `SELECT * FROM summarize_rides_and_goals($1)`;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows) && rows.length > 0){
+            return rows[0];
+        }
+        throw new Error(`Invalid data for getDashboard for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getDashboard with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRidesLastMonth = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+    SELECT
+      a.rideid,
+      a.date,
+      a.distance,
+      a.speedavg,
+      a.speedmax,
+      a.cadence,
+      a.hravg,
+      a.hrmax,
+      a.title,
+      a.poweravg,
+      a.powermax,
+      a.bikeid,
+      coalesce(b.bikename, 'no bike') as bikename,
+      coalesce(b.stravaname, 'no bike') as stravaname,
+      a.stravaid,
+      a.comment,
+      a.elevationgain,
+      a.elapsedtime,
+      a.powernormalized,
+      a.intensityfactor,
+      a.tss,
+      a.matches,
+      a.trainer,
+      a.elevationloss,
+      a.datenotime,
+      a.device_name,
+      a.fracdim
+    FROM
+      rides a left outer join bikes b
+      on a.bikeid = b.bikeid
+    WHERE a.riderid = $1
+      AND a.date >= date_trunc('day', NOW() - INTERVAL '30 days')
+      AND a.date < date_trunc('day', NOW() + INTERVAL '1 day')
+    ORDER BY a.date DESC;
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesLastMonth for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesLastMonth with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRidesHistory = async (fastify, riderId, years) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!Array.isArray(years) || !years.every(Number.isInteger)) {
+        return reply.status(400).send({ error: 'Invalid parameter:  years must be an array of integers.' });
+    }
+
+    let query = `
+      SELECT
+        a.rideid,
+        a.date,
+        a.distance,
+        a.speedavg,
+        a.speedmax,
+        a.cadence,
+        a.hravg,
+        a.hrmax,
+        a.title,
+        a.poweravg,
+        a.powermax,
+        a.bikeid,
+        coalesce(b.bikename, 'no bike') as bikename,
+        coalesce(b.stravaname, 'no bike') as stravaname,
+        a.stravaid,
+        a.comment,
+        a.elevationgain,
+        a.elapsedtime,
+        a.powernormalized,
+        a.intensityfactor,
+        a.tss,
+        a.matches,
+        a.trainer,
+        a.elevationloss,
+        a.datenotime,
+        a.device_name,
+        a.fracdim
+      FROM
+        rides a left outer join bikes b
+        on a.bikeid = b.bikeid
+      WHERE
+        a.riderid = $1
+        AND EXTRACT(YEAR FROM a.date) = ANY($2)
+      ORDER BY
+        a.date ASC;
+      `;
+    const params = [riderId, years];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesHistory for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesHistory with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRides = async (fastify, riderId, dateFrom, dateTo) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    // Validate dateFrom and dateTo if they are present
+    let queryConditions = 'WHERE riderid = $1'; // Initialize base condition
+    const params = [riderId]; // Array to store query parameters (starting with riderId)
+
+    if (dateFrom && dayjs(dateFrom, 'YYYY-MM-DD', true).isValid()) {
+        queryConditions += ` AND date >= $2`; // Add condition for dateFrom
+        params.push(dateFrom);
+    }
+
+    if (dateTo && dayjs(dateTo, 'YYYY-MM-DD', true).isValid()) {
+        // Add one day to dateTo and subtract one second
+        const adjustedDateTo = dayjs(dateTo).add(1, 'day').subtract(1, 'second').format('YYYY-MM-DD HH:mm:ss');
+        queryConditions += ` AND date <= $${params.length + 1}`; // Add condition for dateTo
+        params.push(adjustedDateTo); // Add adjusted dateTo to the parameters
+    }
+
+    let query = `
+        SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim
+        FROM
+            Rides ${queryConditions}
+        ORDER BY date DESC
+        `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRides for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRides with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRideById = async (fastify, riderId, rideid) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    const params = [riderId, rideid];
+
+    let query = `
+      SELECT
+        a.rideid,
+        a.date,
+        a.distance,
+        a.speedavg,
+        a.speedmax,
+        a.cadence,
+        a.hravg,
+        a.hrmax,
+        a.title,
+        a.poweravg,
+        a.powermax,
+        a.bikeid,
+        coalesce(b.bikename, 'no bike') as bikename,
+        coalesce(b.stravaname, 'no bike') as stravaname,
+        a.stravaid,
+        a.comment,
+        a.elevationgain,
+        a.elapsedtime,
+        a.powernormalized,
+        a.intensityfactor,
+        a.tss,
+        a.matches,
+        a.trainer,
+        a.elevationloss,
+        a.datenotime,
+        a.device_name,
+        a.fracdim
+      FROM
+        rides a left outer join bikes b
+        on a.bikeid = b.bikeid
+      WHERE
+        a.riderid = $1
+        and a.rideid = $2
+        limit 1;
+      `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows) && rows.length > 0){
+            return rows[0];
+        }
+        return {};
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideById with riderId ${riderId}: ${error.message}`);//th
+    }
+}
 module.exports = {
     getFirstSegmentEffortDate,
+    getStarredSegments,
     upsertRides,
     upsertStarredSegment,
     upsertStarredSegmentEffort,
@@ -490,5 +894,14 @@ module.exports = {
     updateStarredSegments,
     processSegmentEfforts,
     upsertWeight,
-    getWeightTrackerData
+    getWeightTrackerData,
+    getCummulatives,
+    getYearAndMonth,
+    getYearAndDOW,
+    getMonthAndDOM,
+    getDashboard,
+    getRidesLastMonth,
+    getRidesHistory,
+    getRides,
+    getRideById,
 };
