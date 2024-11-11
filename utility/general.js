@@ -20,10 +20,19 @@ const isIntegerValue = (theValue) =>{
     return theValue;
 }
 
+function isValidNumber(value) {
+    return typeof value === 'number' && !isNaN(value);
+}
+
 const isRiderId = (riderId) => isIntegerValue(riderId);
 const isSegmentId = (segmentId) => isIntegerValue(segmentId);
 const isLocationId = (locationId) => isIntegerValue(locationId);
 const isAssignmentId = (assignmentId) => isIntegerValue(assignmentId);
+
+const isValidDate = (dateString) => {
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+}
 
 /**
  * Checks if every element in an array is a non-blank string up to 30 characters long.
@@ -36,4 +45,4 @@ const isValidTagArray = (arr) => {
     );
 }
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidTagArray };
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber };

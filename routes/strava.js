@@ -43,6 +43,7 @@ async function stravaRoutes(fastify, options) {
         reply.send({
             success: true,
             ridesChecked: Array.isArray(recentRides) ? recentRides.length : 0,
+            ridesAddedCount: ridesAdded.length,
             ridesAdded: ridesAdded
         });
 

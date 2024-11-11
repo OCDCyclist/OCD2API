@@ -1,4 +1,4 @@
-const { isRiderId, isSegmentId, isFastify, isEmpty } = require("../utility/general");
+const { isRiderId, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
 const { getStravaSegmentById, convertGearIdToOCD } = require('../db/stravaRideData');
 const {
     convertToImperial,
@@ -43,7 +43,7 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
 
-    let ridesAdded = 0;
+    const ridesAdded = [];
     for (const ride of rides) {
       const existingRide = await fastify.pg.query('SELECT 1 FROM rides WHERE riderid = $1 AND stravaid = $2', [riderId, ride.id]);
       if (existingRide.rowCount === 0) {
@@ -94,7 +94,7 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
                     riderId
                   ]
               );
-              ridesAdded++;
+              ridesAdded.push(ride);
         }
         catch(err){
             console.error('Database error in refreshStravaToken:', err);
@@ -363,8 +363,8 @@ const updateStarredSegments = async (fastify, riderId, starredSegments, tokens) 
             const segmentResponse = await getStravaSegmentById(tokens.accesstoken, segment.id);
             await updateSegmentStats(fastify, riderId, segmentResponse);
         }
-        catch(err){
-            console.error('Database error in updateStarredSegments inserting new segmentsstrava:', err);
+        catch(error){
+            console.error('Database error in updateStarredSegments inserting new segmentsstrava:', error);
         }
     }
 }
@@ -385,6 +385,101 @@ const processSegmentEfforts = async (fastify, riderId, segmentEfforts) => {
     }
 }
 
+const upsertWeight = async (fastify, riderId, date, weight, bodyfatfraction, bodyh2ofraction) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if(!isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be valid");
+    }
+
+    if(!isValidDate(date)){
+        throw new TypeError("Invalid parameter: date must be valid");
+    }
+
+    if(!isValidNumber(weight)){
+        throw new TypeError("Invalid parameter: weight must be valid");
+    }
+
+    if(!isValidNumber(bodyfatfraction)){
+        throw new TypeError("Invalid parameter: bodyfatfraction must be valid");
+    }
+
+    if(!isValidNumber(bodyh2ofraction)){
+        throw new TypeError("Invalid parameter: bodyh2ofraction must be valid");
+    }
+
+    try{
+        const result = await fastify.pg.query(`
+            INSERT INTO riderweight (riderId, date, weight, bodyfatfraction, bodyh2ofraction) VALUES (
+                $1, $2, $3, $4, $5
+            )
+            ON CONFLICT (riderid, date)
+            DO UPDATE SET
+                weight = EXCLUDED.weight,
+                bodyfatfraction = EXCLUDED.bodyfatfraction,
+                bodyh2ofraction = EXCLUDED.bodyh2ofraction,
+                updatedttm = CURRENT_TIMESTAMP
+            RETURNING riderid, date, weight, bodyfatfraction, bodyh2ofraction;
+            `,  [
+                riderId,
+                date,
+                weight,
+                bodyfatfraction,
+                bodyh2ofraction
+            ]
+        );
+        return result;
+    }
+    catch(error){
+        console.error(`Database error in upsertWeight inserting / updating new weight for riderid ${riderid}:`, error.message);
+    }
+}
+
+const getWeightTrackerData = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        Select
+            date,
+            weight,
+            weight7,
+            weight30,
+            weight365,
+            bodyfatfraction,
+            bodyfatfraction7,
+            bodyfatfraction30,
+            bodyfatfraction365,
+            bodyh2ofraction,
+            bodyh2ofraction7,
+            bodyh2ofraction30,
+            bodyh2ofraction365
+        from
+            riderweight
+        WHERE riderid = $1
+        order by date desc
+        limit 1;
+    `;
+    const params = [riderId];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const result = await fastify.pg.query(query, params);
+
+        return result;
+
+    } catch (err) {
+        throw new Error(`Database error fetching getWeightTrackerData with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     upsertRides,
@@ -393,5 +488,7 @@ module.exports = {
     updateSegmentStats,
     processRideSegments,
     updateStarredSegments,
-    processSegmentEfforts
+    processSegmentEfforts,
+    upsertWeight,
+    getWeightTrackerData
 };

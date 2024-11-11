@@ -1,5 +1,6 @@
 const { DateTime } = require('luxon'); // Add Luxon for date parsing
 const { getTags, addTag, removeTag, assignTags} = require('../db/dbTagQueries');
+ const { upsertWeight, getWeightTrackerData } = require('../db/dbQueries');
 const {isRiderId, isLocationId, isAssignmentId, isValidTagArray} = require('../utility/general')
 
 async function userRoutes(fastify, options) {
@@ -45,32 +46,12 @@ async function userRoutes(fastify, options) {
     }
 
     try {
-      const deleteQuery = `Delete from riderweight where riderid = $1 and date = $2;`;
+      const weightUpdated = await upsertWeight(fastify, riderId, date, weight, bodyfatfraction, bodyh2ofraction);
 
-      const query = `
-          INSERT INTO riderweight (
-              riderid, date, weight, bodyfatfraction, bodyh2ofraction
-          ) VALUES (
-              $1, $2, $3, $4, $5
-          ) RETURNING riderid, date, weight, bodyfatfraction, bodyh2ofraction;
-      `;
-      const valuesDelete = [
-        riderId, isoDate
-      ];
+      // Return the newly inserted weight data
+      reply.status(200).send(weightUpdated.rows.length > 0 ? weightUpdated.rows[0] : null);
 
-      const values = [
-        riderId, isoDate, weight, bodyfatfraction, bodyh2ofraction
-      ];
-
-      const deleteResult = await fastify.pg.query(deleteQuery, valuesDelete);
-
-      const result = await fastify.pg.query(query, values);
-      const insertedWeight = result.rows[0];
-
-      // Return the newly inserted ride data
-      reply.status(200).send(insertedWeight);
-
-      // After successfully inserting the weight, update cummulatives
+      // After successfully inserting or updating the weight, update cummulative weights.
       setImmediate(async () => {
         try {
           const updateCummulativesQuery = 'CALL public.update_riderweight_avg($1)';
@@ -81,8 +62,8 @@ async function userRoutes(fastify, options) {
         }
       });
     } catch (error) {
-        console.error('Error inserting new ride:', error);
-        reply.status(500).send({ error: 'An error occurred while inserting the ride' });
+        console.error('Error inserting or updating new weight:', error);
+        reply.status(500).send({ error: 'An error occurred while inserting or updating the weight measurement' });
     }
   });
 
@@ -94,40 +75,16 @@ async function userRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    const params = [id];
-
-    let query = `
-      Select
-          date,
-          weight,
-          weight7,
-          weight30,
-          weight365,
-          bodyfatfraction,
-          bodyfatfraction7,
-          bodyfatfraction30,
-          bodyfatfraction365,
-          bodyh2ofraction,
-          bodyh2ofraction7,
-          bodyh2ofraction30,
-          bodyh2ofraction365
-      from
-          riderweight
-      WHERE riderid = $1
-      order by date desc
-      limit 1;
-    `;
-
     try {
-      const { rows } = await fastify.pg.query(query, params);
+      const result = await getWeightTrackerData(fastify, riderId);
 
       // If no rider weight tracking is found, return an empty object
-      if (rows.length === 0) {
+      if (result.rows.length === 0) {
         return reply.code(200).send({});
       }
 
       // Send the rider weight tracker data
-      return reply.code(200).send(rows[0]);
+      return reply.code(200).send(result.rows[0]);
 
     } catch (err) {
       console.error('Database error:', err);
@@ -256,7 +213,6 @@ async function userRoutes(fastify, options) {
         return reply.code(500).send({ error: `Error adding tag for riderid ${riderId}: ${error.message}` });
     }
   });
-
 
   fastify.delete('/user/removeTag',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
