@@ -10,7 +10,8 @@ const { getFirstSegmentEffortDate,
 const { getStravaCredentials,
         getStravaTokens,
         isStravaTokenExpired,
-        refreshStravaToken
+        refreshStravaToken,
+        getStravaToken,
 } = require('../db/stravaAdmin');
 const { getStravaRecentRides,
         getStravaStarredSegments,
@@ -74,12 +75,7 @@ async function stravaRoutes(fastify, options) {
     fastify.get('/rider/updateStarredSegments', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;
 
-        const stravaCredentials = await getStravaCredentials(fastify);
-        let tokens = await getStravaTokens(fastify, riderId);
-
-        if (isStravaTokenExpired(tokens)) {
-          tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
-        }
+        let tokens = await getStravaToken(fastify, riderId);
 
         const starredSegmentsResponse = await getStravaStarredSegments(tokens.accesstoken);
 

@@ -46,7 +46,7 @@ const isStravaTokenExpired = (accessToken) => {
     return expirationTime <= now;
 }
 
-async function refreshStravaToken(fastify, riderId, refreshToken, clientId, clientSecret) {
+const refreshStravaToken = async (fastify, riderId, refreshToken, clientId, clientSecret) => {
     const response = await axios.post('https://www.strava.com/oauth/token', {
       client_id: clientId,
       client_secret: clientSecret,
@@ -72,4 +72,12 @@ async function refreshStravaToken(fastify, riderId, refreshToken, clientId, clie
     }
 }
 
-module.exports = { getStravaCredentials, getStravaTokens, isStravaTokenExpired, refreshStravaToken };
+const getStravaToken = async (fastify, riderId) => {
+    let tokens = await getStravaTokens(fastify, riderId);
+    if (isStravaTokenExpired(tokens)) {
+        const stravaCredentials = await getStravaCredentials(fastify);
+        tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+    }
+}
+
+module.exports = { getStravaCredentials, getStravaTokens, isStravaTokenExpired, refreshStravaToken, getStravaToken };

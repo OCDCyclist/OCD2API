@@ -80,7 +80,7 @@ const convertSegmentToUpdateCount = (segmentToCountUpdate) => {
     }
 }
 
-const allValuesDefined = (obj, location) =>{
+const allValuesDefined = (obj, location) => {
     const returnValue = Object.values(obj).every(value => value !== undefined && value !== null);
     if( !returnValue){
         console.error(`Database values for ${location} are not valid: ${JSON.stringify(obj)}`);
@@ -96,5 +96,5 @@ module.exports = {
     convertToImperial,
     allValuesDefined,
     removeTrailingZ,
-    unitConverstion
+    unitConverstion,
 };

@@ -1,3 +1,4 @@
+const xss = require("xss");
 const dayjs = require('dayjs');
 const { isRiderId, isRideId, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
 const { getStravaSegmentById, convertGearIdToOCD } = require('../db/stravaRideData');
@@ -120,7 +121,7 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
                     riderId
                   ]
               );
-              ridesAdded.push(ride);
+              ridesAdded.push(rideImperial);
         }
         catch(err){
             console.error('Database error in refreshStravaToken:', err);
@@ -640,40 +641,37 @@ const getRidesLastMonth = async (fastify, riderId) =>{
 
     let query = `
     SELECT
-      a.rideid,
-      a.date,
-      a.distance,
-      a.speedavg,
-      a.speedmax,
-      a.cadence,
-      a.hravg,
-      a.hrmax,
-      a.title,
-      a.poweravg,
-      a.powermax,
-      a.bikeid,
-      coalesce(b.bikename, 'no bike') as bikename,
-      coalesce(b.stravaname, 'no bike') as stravaname,
-      a.stravaid,
-      a.comment,
-      a.elevationgain,
-      a.elapsedtime,
-      a.powernormalized,
-      a.intensityfactor,
-      a.tss,
-      a.matches,
-      a.trainer,
-      a.elevationloss,
-      a.datenotime,
-      a.device_name,
-      a.fracdim
+      rideid,
+      date,
+      distance,
+      speedavg,
+      speedmax,
+      cadence,
+      hravg,
+      hrmax,
+      title,
+      poweravg,
+      powermax,
+      bikeid,
+      coalesce(bikename, 'no bike') as bikename,
+      coalesce(stravaname, 'no bike') as stravaname,
+      stravaid,
+      comment,
+      elevationgain,
+      elapsedtime,
+      powernormalized,
+      intensityfactor,
+      tss,
+      matches,
+      trainer,
+      elevationloss,
+      datenotime,
+      device_name,
+      fracdim,
+      tags,
+      calculated_weight_kg
     FROM
-      rides a left outer join bikes b
-      on a.bikeid = b.bikeid
-    WHERE a.riderid = $1
-      AND a.date >= date_trunc('day', NOW() - INTERVAL '30 days')
-      AND a.date < date_trunc('day', NOW() + INTERVAL '1 day')
-    ORDER BY a.date DESC;
+      get_rides30days($1);
     `;
     const params = [riderId];
 
@@ -883,6 +881,132 @@ const getRideById = async (fastify, riderId, rideid) =>{
         throw new Error(`Database error fetching getRideById with riderId ${riderId}: ${error.message}`);//th
     }
 }
+
+const getLookback = async (fastify, riderId ) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    const params = [riderId]; // Array to store query parameters (starting with riderId)
+
+    let query = `
+      Select
+        rideid,
+        category,
+        date,
+        distance,
+        speedavg,
+        elapsedtime,
+        elevationgain,
+        hravg,
+        poweravg
+        bikeid,
+        stravaid,
+        title,
+        comment
+      From
+        get_rider_lookback_this_day($1)
+      Order By date asc;
+      `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getLookback for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getLookback with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const updateRide = async (fastify, riderId, rideid, updates) =>{
+
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( typeof(updates) !== 'object') {
+        throw new TypeError("Invalid parameter: updates must be an objectr");
+    }
+
+    // Define allowed fields for update
+    const allowedFields = [
+        'date', 'distance', 'speedavg', 'speedmax', 'cadence', 'hravg', 'hrmax',
+        'title', 'poweravg', 'powermax', 'bikeid', 'stravaid', 'comment',
+        'elevationgain', 'elevationloss', 'elapsedtime', 'powernormalized', 'trainer',
+        'tss', 'intensityfactor'
+    ];
+
+    // Filter out invalid fields
+    const sanitizedUpdates = {};
+    for (const key of Object.keys(updates)) {
+        if (allowedFields.includes(key)) {
+            sanitizedUpdates[key] = updates[key];
+        }
+    }
+
+    // Check if there are no valid fields to update
+    if (Object.keys(sanitizedUpdates).length === 0) {
+        throw new TypeError("No updates exist to be made.");
+    }
+
+    // Input validation
+    if (sanitizedUpdates.date) {
+        const parsedDate = DateTime.fromFormat(sanitizedUpdates.date, 'yyyy-MM-dd HH:mm:ss');
+        if (!parsedDate.isValid) {
+            throw new TypeError("Invalid date format (expected YYYY-MM-DD HH:mm:ss)");
+        }
+        sanitizedUpdates.date = parsedDate.toISO(); // Convert to ISO format
+    }
+
+    if (sanitizedUpdates.elapsedTime) {
+        try {
+            const convertElapsedTime = (timeString) => {
+                const [hours, minutes, seconds] = timeString.split(':').map(Number);
+                return hours * 3600 + minutes * 60 + seconds;
+            };
+            sanitizedUpdates.elapsedTime = convertElapsedTime(sanitizedUpdates.elapsedTime);
+        } catch (error) {
+            throw new TypeError("Invalid elapsedTime format (expected hh:mm:ss)");
+        }
+    }
+
+    // Sanitize string fields to protect against XSS
+    if (sanitizedUpdates.title) sanitizedUpdates.title = xss(sanitizedUpdates.title);
+    if (sanitizedUpdates.comment) sanitizedUpdates.comment = xss(sanitizedUpdates.comment);
+
+    // SQL update query
+    const setClause = Object.keys(sanitizedUpdates)
+        .map((key, index) => `${key.toLowerCase()} = $${index + 1}`)
+        .join(', ');
+
+    const query = `
+        UPDATE rides
+        SET ${setClause}
+        WHERE rideid = $${Object.keys(sanitizedUpdates).length + 1} AND riderid = $${Object.keys(sanitizedUpdates).length + 2}
+        RETURNING *;`;
+
+    try {
+        const values = [...Object.values(sanitizedUpdates), rideid, riderId];
+        const result = await fastify.pg.query(query, values);
+        if( result.rows.length > 0){
+            return result.rows[0];
+        }
+    } catch (error) {
+        throw new Error(`Database error running updateRide for riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -904,4 +1028,6 @@ module.exports = {
     getRidesHistory,
     getRides,
     getRideById,
+    getLookback,
+    updateRide,
 };

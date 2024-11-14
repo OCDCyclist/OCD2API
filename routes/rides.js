@@ -5,6 +5,8 @@ const {
   getRidesHistory,
   getRides,
   getRideById,
+  getLookback,
+  updateRide,
 } = require('../db/dbQueries');
 
 async function ridesRoutes(fastify, options) {
@@ -109,39 +111,14 @@ async function ridesRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    const params = [id];
-
-    let query = `
-      Select
-        rideid,
-        category,
-        date,
-        distance,
-        speedavg,
-        elapsedtime,
-        elevationgain,
-        hravg,
-        poweravg
-        bikeid,
-        stravaid,
-        title,
-        comment
-      From
-        get_rider_lookback_this_day($1)
-      Order By date asc;
-      `;
-
     try {
-      const { rows } = await fastify.pg.query(query, params);
+      const result = await getLookback(fastify, riderId);
 
-      // If no rides are found, return an empty array
-      if (rows.length === 0) {
+      if (!Array.isArray(result)) {
         return reply.code(200).send([]);
       }
 
-      // Send the filtered rides
-      return reply.code(200).send(rows);
-
+      return reply.code(200).send(result);
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
@@ -288,78 +265,14 @@ async function ridesRoutes(fastify, options) {
   });
 
   fastify.post('/ride/:rideid/update', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { riderId } = request.user; // Extracted from the JWT after authentication
+    const { riderId } = request.user;
     const { rideid } = request.params;
     const updates = request.body;
 
-    // Define allowed fields for update
-    const allowedFields = [
-      'date', 'distance', 'speedavg', 'speedmax', 'cadence', 'hravg', 'hrmax',
-      'title', 'poweravg', 'powermax', 'bikeid', 'stravaid', 'comment',
-      'elevationgain', 'elevationloss', 'elapsedtime', 'powernormalized', 'trainer',
-      'tss', 'intensityfactor'
-    ];
-
-    // Filter out invalid fields
-    const sanitizedUpdates = {};
-    for (const key of Object.keys(updates)) {
-      if (allowedFields.includes(key)) {
-        sanitizedUpdates[key] = updates[key];
-      }
-    }
-
-    // Check if there are no valid fields to update
-    if (Object.keys(sanitizedUpdates).length === 0) {
-      return reply.status(400).send({ error: 'No valid fields provided for update' });
-    }
-
-    // Input validation
-    if (sanitizedUpdates.date) {
-      const parsedDate = DateTime.fromFormat(sanitizedUpdates.date, 'yyyy-MM-dd HH:mm:ss');
-      if (!parsedDate.isValid) {
-        return reply.status(400).send({ error: 'Invalid date format (expected YYYY-MM-DD HH:mm:ss)' });
-      }
-      sanitizedUpdates.date = parsedDate.toISO(); // Convert to ISO format
-    }
-
-    if (sanitizedUpdates.elapsedTime) {
-      try {
-        const convertElapsedTime = (timeString) => {
-          const [hours, minutes, seconds] = timeString.split(':').map(Number);
-          return hours * 3600 + minutes * 60 + seconds;
-        };
-        sanitizedUpdates.elapsedTime = convertElapsedTime(sanitizedUpdates.elapsedTime);
-      } catch (error) {
-        return reply.status(400).send({ error: 'Invalid elapsedTime format (expected hh:mm:ss)' });
-      }
-    }
-
-    // Sanitize string fields to protect against XSS
-    if (sanitizedUpdates.title) sanitizedUpdates.title = xss(sanitizedUpdates.title);
-    if (sanitizedUpdates.comment) sanitizedUpdates.comment = xss(sanitizedUpdates.comment);
-
-    // SQL update query
-    const setClause = Object.keys(sanitizedUpdates)
-      .map((key, index) => `${key.toLowerCase()} = $${index + 1}`)
-      .join(', ');
-
-    const query = `
-      UPDATE rides
-      SET ${setClause}
-      WHERE rideid = $${Object.keys(sanitizedUpdates).length + 1} AND riderid = $${Object.keys(sanitizedUpdates).length + 2}
-      RETURNING *;
-    `;
-
     try {
-      const values = [...Object.values(sanitizedUpdates), rideid, riderId];
+      const result = await updateRide(fastify, riderId, rideid, updates);
 
-      const result = await fastify.pg.query(query, values);
-
-      if (result.rows.length === 0) {
-        return reply.status(404).send({ error: 'Ride not found or you do not have permission to update this ride' });
-      }
-
-      reply.status(200).send(result.rows[0]);
+      reply.status(200).send(result);
 
       // Update all rider metrics after modification
       setImmediate(async () => {
