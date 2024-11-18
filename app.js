@@ -1,4 +1,27 @@
-const fastify = require('fastify')({ logger: true });
+const winston = require('winston');
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: './logs/ocdapi.log' }),
+  ],
+});
+
+// Stream function for Fastify
+const stream = {
+  write: (message) => logger.info(message.trim()),
+};
+
+const fastify = require('fastify')(
+  {
+    logger: {
+      level: 'warn',
+      disableRequestLogging: true,
+      stream,
+    },
+  }
+);
 const dbConnector = require('./db/db');
 
 // Load environment variables
@@ -6,8 +29,14 @@ if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
 
+
 // Register CORS plugin
 fastify.register(require('@fastify/cors'), {
+  logger: {
+    stream: {
+      write: (message) => logger.info(message.trim()),
+    },
+  },
   origin: (origin, cb) => {
     const allowedOrigins = ['http://localhost:5173'];  // Update this to your frontend origin
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -59,9 +88,11 @@ const start = async () => {
   try {
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
     console.log('Server is running on http://localhost:3000');
+    logger.info('Server is running on http://localhost:3000');
   } catch (err) {
-    fastify.log.error(err);
-    console.log(JSON.stringify(err))
+    const message = `Server is not running: ${JSON.stringify(err)}`;
+    fastify.log.error(message);
+    logger.error(message);
     process.exit(1);
   }
 };

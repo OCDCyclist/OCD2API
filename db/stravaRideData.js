@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { isFastify, isRiderId } = require('../utility/general');
-const { getRoundedCurrentDateISO, getSixMonthsEarlier, getTwelveMonthsEarlier} = require('../utility/dates');
+const { getRoundedCurrentDateISO, getSixMonthsEarlier, getFiveYearsEarlier} = require('../utility/dates');
 const dayjs = require('dayjs');
 
 async function convertGearIdToOCD(fastify, riderid, stravaGear_Id, defaultBikeId){
@@ -81,7 +81,8 @@ async function getStravaSegmentEffortsForRider(accessToken, segmentId, riderId, 
     // If no endDate is provided, use the current date rounded up to the nearest day
     endDate = endDate ? dayjs(endDate).startOf('day').toISOString() : getRoundedCurrentDateISO();
 
-    let startDate = getTwelveMonthsEarlier(endDate);
+    let startDate = getFiveYearsEarlier(endDate);
+    //let startDate = getTwelveMonthsEarlier(endDate);
     //let startDate = getSixMonthsEarlier(endDate);
     const cutoffDate = dayjs('2001-01-01').toISOString();
 
@@ -109,7 +110,7 @@ async function getStravaSegmentEffortsForRider(accessToken, segmentId, riderId, 
 
         // Move the date range back 6 months
         endDate = startDate;
-        startDate = getSixMonthsEarlier(startDate);
+        startDate = getFiveYearsEarlier(startDate);
     }
     return allSegmetEfforts;
 }

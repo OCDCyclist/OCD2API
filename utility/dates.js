@@ -15,4 +15,9 @@ const getTwelveMonthsEarlier= (date) => {
     return dayjs(date).subtract(12, 'months').startOf('day').toISOString();
 }
 
-module.exports = { getRoundedCurrentDateISO, getSixMonthsEarlier, getTwelveMonthsEarlier };
+// Function to get the date 5 years before a given date
+const getFiveYearsEarlier= (date) => {
+    return dayjs(date).subtract(5, 'years').startOf('day').toISOString();
+}
+
+module.exports = { getRoundedCurrentDateISO, getSixMonthsEarlier, getTwelveMonthsEarlier, getFiveYearsEarlier };

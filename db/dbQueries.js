@@ -23,7 +23,7 @@ const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
         throw new TypeError("Invalid parameter: segmentId must be an integer");
     }
 
-    let query = `Select min(start_date) as earliestdate from segmentsstravaefforts where riderid = $1 and id = $2;`;
+    let query = `Select min(start_date) as earliestdate from segmentsstravaefforts where riderid = $1 and segmentid = $2;`;
     const params = [riderId, segmentId];
 
     try {
@@ -203,13 +203,14 @@ const upsertStarredSegmentEffort = async(fastify, riderId, segmentEffort) => {
     if (isEmpty(segmentEffort) || 'id' in segmentEffort === false) { return false; }
 
     try{
-        const existingSegmentEffort = await fastify.pg.query('SELECT 1 FROM segmentsstravaefforts WHERE riderid = $1 AND id = $2 AND stravaid = $3', [riderId, segmentEffort.segment.id, segmentEffort.activity.id]);
+        const existingSegmentEffort = await fastify.pg.query('SELECT 1 FROM segmentsstravaefforts WHERE riderid = $1 AND segmentid = $2 AND effortid = $3', [riderId, segmentEffort.segment.id, segmentEffort.id]);
         if (existingSegmentEffort.rowCount === 0) {
             const segmentEffortImperial = convertSegmentEffortToImperial(segmentEffort);
             await fastify.pg.query(`
                 INSERT INTO segmentsstravaefforts (
                     riderid,
-                    id,
+                    segmentid,
+                    effortid,
                     stravaid,
                     elapsed_time,
                     moving_time,
@@ -222,10 +223,11 @@ const upsertStarredSegmentEffort = async(fastify, riderId, segmentEffort) => {
                     average_heartrate,
                     max_heartrate
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 `,  [
                     riderId,
-                    segmentEffortImperial.id,
+                    segmentEffortImperial.segmentid,
+                    segmentEffortImperial.effortid,
                     segmentEffortImperial.stravaid,
                     segmentEffortImperial.elapsed_time,
                     segmentEffortImperial.moving_time,
@@ -1022,11 +1024,12 @@ const getSegmentEfforts = async (fastify, riderId, segmentId) =>{
     let query = `
     SELECT
         rank,
-		id,
-		strava_rideid,
+        id,
+        strava_rideid,
+        strava_effortid,
         segment_name,
         distance,
-		total_elevation_gain,
+        total_elevation_gain,
         start_date,
         elapsed_time,
         moving_time,
@@ -1035,7 +1038,8 @@ const getSegmentEfforts = async (fastify, riderId, segmentId) =>{
         average_heartrate,
         max_heartrate,
         start_index,
-        end_index
+        end_index,
+        tags
     FROM
         get_segment_effort_rank($1, $2);
     `;

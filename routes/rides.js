@@ -21,6 +21,7 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const result = await getRidesLastMonth(fastify, riderId);
+      request.log.warn(`rides retrieved: ${result.length}`);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
@@ -76,7 +77,6 @@ async function ridesRoutes(fastify, options) {
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
       }
-
       return reply.code(200).send(result);
     } catch (err) {
       console.error('Database error:', err);

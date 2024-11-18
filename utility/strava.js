@@ -55,8 +55,9 @@ const convertSegmentToImperial = (segment) => {
 
 const convertSegmentEffortToImperial = (segmentEffort) => {
     return{
-        id: segmentEffort.segment.id,
+        segmentid: segmentEffort.segment.id,
         stravaid: segmentEffort.activity.id,
+        effortid: segmentEffort.id,
         elapsed_time: segmentEffort.elapsed_time,
         moving_time: segmentEffort.moving_time,
         start_date: removeTrailingZ(segmentEffort.start_date_local),
