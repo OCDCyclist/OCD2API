@@ -1,6 +1,6 @@
 const xss = require("xss");
 const dayjs = require('dayjs');
-const { isRiderId, isRideId, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
+const { isRiderId, isIntegerValue, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
 const { getStravaSegmentById, convertGearIdToOCD } = require('../db/stravaRideData');
 const {
     convertToImperial,
@@ -1007,6 +1007,110 @@ const updateRide = async (fastify, riderId, rideid, updates) =>{
     }
 }
 
+const getSegmentEfforts = async (fastify, riderId, segmentId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if( !isIntegerValue(Number(segmentId))){
+        throw new TypeError("Invalid parameter: segmentId must be an integer");
+    }
+    let query = `
+    SELECT
+        rank,
+		id,
+		strava_rideid,
+        segment_name,
+        distance,
+		total_elevation_gain,
+        start_date,
+        elapsed_time,
+        moving_time,
+        average_cadence,
+        average_watts,
+        average_heartrate,
+        max_heartrate,
+        start_index,
+        end_index
+    FROM
+        get_segment_effort_rank($1, $2);
+    `;
+    const params = [riderId, segmentId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getSegmentEfforts for riderId ${riderId} segmentId ${segmentId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error for getSegmentEfforts with riderId ${riderId} segmentId ${segmentId}: ${error.message}`);//th
+    }
+}
+
+const getSegmentEffortUpdateRequests = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        Select riderid, stravaid, fulfilled from segmentsstravaeffortupdaterequest where riderid = $1 and fulfilled = false;
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getSegmentEffortUpdateRequests for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error for getSegmentEffortUpdateRequests with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const updateSegmentEffortUpdateRequest = async (fastify, riderId, segmentId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if( !isIntegerValue(Number(segmentId))){
+        throw new TypeError("Invalid parameter: segmentId must be an integer");
+    }
+
+    let query = `
+        Update segmentsstravaeffortupdaterequest
+        set fulfilled = true
+        where riderid = $1 and stravaid = $2 and fulfilled = false;
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params, segmentId);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for updateSegmentEffortUpdateRequest for riderId ${riderId} segmentId ${segmentId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error for updateSegmentEffortUpdateRequest with riderId ${riderId} segmentId ${segmentId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -1030,4 +1134,7 @@ module.exports = {
     getRideById,
     getLookback,
     updateRide,
+    getSegmentEfforts,
+    getSegmentEffortUpdateRequests,
+    updateSegmentEffortUpdateRequest,
 };
