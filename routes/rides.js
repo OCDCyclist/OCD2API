@@ -4,10 +4,15 @@ const {
   getRidesLastMonth,
   getRidesHistory,
   getRides,
+  getRidesByDate,
+  getRidesByYearMonth,
+  getRidesByYearDOW,
+  getRidesByDOMMonth,
   getRideById,
   getLookback,
   updateRide,
 } = require('../db/dbQueries');
+const { clusterRides } = require('../utility/clustering');
 
 async function ridesRoutes(fastify, options) {
 
@@ -73,6 +78,130 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const result = await getRides(fastify, riderId, dateFrom, dateTo);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ridesByDate',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { date } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Validate the datetime string (YYYY-MM-DD)
+    const parsedDate = DateTime.fromFormat(date, 'yyyy-MM-dd');
+    if (!parsedDate.isValid) {
+      return reply.status(400).send({ error: 'Invalid date format (expected YYYY-MM-DD)' });
+    }
+
+    try {
+      const result = await getRidesByDate(fastify, riderId, date);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ridesByYearMonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { year, month } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearValue = parseInt(year, 10);
+    if (isNaN(yearValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    const monthValue = parseInt(month, 10);
+    if (isNaN(monthValue) || monthValue < 0 || monthValue > 12) {
+      return reply.code(400).send({ error: 'Invalid or missing month' });
+    }
+
+    try {
+      const result = await getRidesByYearMonth(fastify, id, yearValue, monthValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ridesByYearDOW',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year, dow } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearValue = parseInt(year, 10);
+    if (isNaN(yearValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    const dowValue = parseInt(dow, 10);
+    if (isNaN(dowValue) || dowValue < 0 || dowValue > 7) {
+      return reply.code(400).send({ error: 'Invalid or missing dow (day of week: Sunday=0, All Days=7)' });
+    }
+
+    try {
+      const result = await getRidesByYearDOW(fastify, id, yearValue, dowValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/getRidesByDOMMonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { dom, month } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const domValue = parseInt(dom, 10);
+    if (isNaN(domValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing dom (day of month)' });
+    }
+
+    const monthValue = parseInt(month, 10);
+    if (isNaN(monthValue) || monthValue < 0 || monthValue > 12) {
+      return reply.code(400).send({ error: 'Invalid or missing month' });
+    }
+
+    try {
+      const result = await getRidesByDOMMonth(fastify, id, domValue, monthValue);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
@@ -288,6 +417,29 @@ async function ridesRoutes(fastify, options) {
       reply.status(500).send({ error: 'An error occurred while updating the ride' });
     }
   });
+
+  fastify.get('/ride/cluster', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user; // Extracted from the JWT after authentication
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+
+      const result = await clusterRides(fastify, id);
+      if(result){
+        reply.status(200).send({status: true, message: "Cluster values have been updated."});
+      }
+      reply.status(500).send({ error: 'Unable to update cluster values' });
+
+    } catch (error) {
+      console.error('Error clustering rides:', error);
+      reply.status(500).send({ error: 'An error occurred while clustering rides' });
+    }
+  });
+
 }
 
 module.exports = ridesRoutes;

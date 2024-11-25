@@ -17,7 +17,7 @@ const isIntegerValue = (theValue) =>{
     if (typeof(theValue) !== 'number' || !Number.isInteger(theValue)) {
         return false;
     }
-    return theValue;
+    return true;
 }
 
 function isValidNumber(value) {
@@ -45,4 +45,16 @@ const isValidTagArray = (arr) => {
     );
 }
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue };
+
+/**
+ * Checks if every element in an array is a non-blank string up to 30 characters long.
+ * @param {object[]} data - The array to validate.
+ * @returns {boolean} - Returns true if all elements pass the validation, otherwise false.
+ */
+const isValidRideArray = (data) => {
+    return Array.isArray(data) && arr.every(
+        (ride) => typeof ride === 'object' && 'rideid' in ride
+    );
+}
+
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray };
