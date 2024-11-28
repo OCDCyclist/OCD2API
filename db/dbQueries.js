@@ -671,7 +671,8 @@ const getRidesLastMonth = async (fastify, riderId) =>{
       device_name,
       fracdim,
       tags,
-      calculated_weight_kg
+      calculated_weight_kg,
+      cluster
     FROM
       get_rides30days($1);
     `;
@@ -871,7 +872,8 @@ const getRidesByDate = async (fastify, riderId, date) =>{
             device_name,
             fracdim,
             tags,
-            calculated_weight_kg
+            calculated_weight_kg,
+            cluster
         FROM
             get_rides_by_date($1, $2)
         `;
@@ -937,7 +939,8 @@ const getRidesByYearMonth = async (fastify, riderId, year, month) =>{
             device_name,
             fracdim,
             tags,
-            calculated_weight_kg
+            calculated_weight_kg,
+            cluster
         FROM
             get_rides_by_year_month($1, $2, $3)
         `;
@@ -1002,7 +1005,8 @@ const getRidesByYearDOW = async (fastify, riderId, year, dow) =>{
             device_name,
             fracdim,
             tags,
-            calculated_weight_kg
+            calculated_weight_kg,
+            cluster
         FROM
             get_rides_by_year_dow($1, $2, $3)
         `;
@@ -1067,7 +1071,8 @@ const getRidesByDOMMonth = async (fastify, riderId, dom, month) =>{
             device_name,
             fracdim,
             tags,
-            calculated_weight_kg
+            calculated_weight_kg,
+            cluster
         FROM
             get_rides_by_dom_month($1, $2, $3)
         `;
@@ -1375,7 +1380,9 @@ const updateSegmentEffortUpdateRequest = async (fastify, riderId, segmentId) =>{
     }
 }
 
-const getRidesForClustering = async (fastify, riderId) =>{
+const getRidesForClustering = async (fastify, riderId, startYearBack, endYearBack) => {
+    // start year back is the number of years back to start from.  If now 2024 and want to start in 2020, then startYearBack = 4
+    // end year back is the number of years back to end at.  If now 2024 and want to end in 2024, then endYearBack = 0
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1384,9 +1391,23 @@ const getRidesForClustering = async (fastify, riderId) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    const params = [riderId]; // Array to store query parameters (starting with riderId)
+    if ( !isIntegerValue(startYearBack)) {
+        throw new TypeError("Invalid parameter: startYearBack must be an integer");
+    }
 
-    let query = `
+    if ( !isIntegerValue(endYearBack)) {
+        throw new TypeError("Invalid parameter: endYearBack must be an integer");
+    }
+
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - startYearBack);
+
+    const endDate = new Date();
+    endDate.setFullYear(endDate.getFullYear() - endYearBack);
+
+    const params = [riderId, startDate, endDate];
+
+    const query = `
         SELECT
             rideid,
             distance,
@@ -1403,7 +1424,7 @@ const getRidesForClustering = async (fastify, riderId) =>{
             and elevationgain > 0
             and hravg > 60
             and powernormalized > 0
-            and date >= date_trunc('day', NOW() - INTERVAL '5 years');
+        	 AND date BETWEEN $2 AND $3
     `;
 
     try {
@@ -1411,10 +1432,68 @@ const getRidesForClustering = async (fastify, riderId) =>{
         if(Array.isArray(rows)){
             return rows;
         }
-        throw new Error(`Invalid data for getRides for riderId ${riderId}`);//th
+        throw new Error(`Invalid data for getRidesForClustering for riderId ${riderId} startYearBack ${startYearBack} endYearBack${endYearBack}`);
 
     } catch (error) {
-        throw new Error(`Database error fetching getRides with riderId ${riderId}: ${error.message}`);//th
+        throw new Error(`Database error fetching getRidesForClustering with riderId ${riderId} startYearBack ${startYearBack} endYearBack${endYearBack}: ${error.message}`);
+    }
+}
+
+const getRidesForClusteringByYear = async (fastify, riderId, startYear, endYear) => {
+    // start year back is the number of years back to start from.  If now 2024 and want to start in 2020, then startYearBack = 4
+    // end year back is the number of years back to end at.  If now 2024 and want to end in 2024, then endYearBack = 0
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(startYear)) {
+        throw new TypeError("Invalid parameter: startYear must be an integer");
+    }
+
+    if ( !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: endYear must be an integer");
+    }
+
+    const params = [
+        riderId,
+        new Date(`${startYear}-01-01T00:00:00Z`),
+        new Date(`${endYear + 1}-01-01T00:00:00Z`)
+      ];
+
+    const query = `
+         SELECT
+        rideid,
+        distance,
+        speedavg,
+        elevationgain,
+        hravg,
+        powernormalized
+    FROM
+        rides
+    WHERE
+        riderid = $1
+        AND distance >= 10
+        AND speedavg > 0
+        AND elevationgain > 0
+        AND hravg > 60
+        AND powernormalized > 0
+        AND date >= $2
+        AND date < $3
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesForClusteringByYear for riderId ${riderId} startYearBack ${startYear} endYearBack${endYear}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesForClusteringByYear with riderId ${riderId} startYearBack ${startYear} endYearBack${endYear}: ${error.message}`);
     }
 }
 
@@ -1446,7 +1525,7 @@ const updateRidesForClustering = async (fastify, riderId, clusterData) =>{
     return count > 0;
 }
 
-const updateClusterCentroids = async (fastify, riderId, centroids) =>{
+const updateClusterCentroids = async (fastify, riderId, startYear, endYear, centroids) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1455,26 +1534,30 @@ const updateClusterCentroids = async (fastify, riderId, centroids) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
+    if ( !isIntegerValue(startYear) ||  !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: startYear and endYear must be integers");
+    }
+
     if ( !Array.isArray(centroids) || centroids.length === 0) {
         throw new TypeError("Invalid parameter: centroids is not valid");
     }
 
     const insertCentroidQuery = `
-        INSERT INTO cluster_centroids (riderid, cluster, distance, speedavg, elevationgain, hravg, powernormalized)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (riderid, cluster) DO UPDATE
+        INSERT INTO cluster_centroids (riderid, startYear, endYear, cluster, distance, speedavg, elevationgain, hravg, powernormalized)
+        VALUES ($1, $2, $3, $4, ROUND($5, 2), ROUND($6, 2), ROUND($7, 2), ROUND($8, 2), ROUND($9, 2))
+        ON CONFLICT (riderid, startYear, endYear, cluster) DO UPDATE
         SET
-            distance = EXCLUDED.distance,
-            speedavg = EXCLUDED.speedavg,
-            elevationgain = EXCLUDED.elevationgain,
-            hravg = EXCLUDED.hravg,
-            powernormalized = EXCLUDED.powernormalized
+            distance = ROUND(EXCLUDED.distance, 2),
+            speedavg = ROUND(EXCLUDED.speedavg, 2),
+            elevationgain = ROUND(EXCLUDED.elevationgain, 2),
+            hravg = ROUND(EXCLUDED.hravg, 2),
+            powernormalized = ROUND(EXCLUDED.powernormalized, 2);
         `;
 
     let count = 0;
     try {
         centroids.forEach((centroid, clusterIndex) => {
-            fastify.pg.query(insertCentroidQuery, [riderId, clusterIndex, ...centroid]);
+            fastify.pg.query(insertCentroidQuery, [riderId, startYear, endYear, clusterIndex, ...centroid]);
             count++;
         });
     } catch (error) {
@@ -1483,7 +1566,52 @@ const updateClusterCentroids = async (fastify, riderId, centroids) =>{
     return count > 0;
 }
 
-const getClusterCentroids = async (fastify, riderId) =>{
+const getClusterCentroids = async (fastify, riderId, startYear, endYear) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(startYear) ||  !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: startYear and endYear must be integers");
+    }
+
+    const params = [riderId, startYear, endYear];
+
+    let query = `
+        SELECT
+            cluster,
+            startYear,
+            endYear,
+            distance,
+            speedavg,
+            elevationgain,
+            hravg,
+            powernormalized
+        FROM
+            cluster_centroids
+        WHERE
+            riderid = $1
+            and startYear = $2
+            and endYear = $3;
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getClusterCentroids for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getClusterCentroids with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getClusterDefinitions = async (fastify, riderId) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1496,16 +1624,18 @@ const getClusterCentroids = async (fastify, riderId) =>{
 
     let query = `
         SELECT
+            startYear,
+            endYear,
             cluster,
             distance,
             speedavg,
             elevationgain,
             hravg,
-            powernormalized
+            powernormalized,
+            name,
+            ride_count
         FROM
-            cluster_centroids
-        WHERE
-            riderid = $1;
+            get_cluster_definitions_with_ride_counts($1)
     `;
 
     try {
@@ -1513,10 +1643,76 @@ const getClusterCentroids = async (fastify, riderId) =>{
         if(Array.isArray(rows)){
             return rows;
         }
-        throw new Error(`Invalid data for getClusterCentroids for riderId ${riderId}`);//th
+        throw new Error(`Invalid data for getClusterDefinitions for riderId ${riderId}`);//th
 
     } catch (error) {
-        throw new Error(`Database error fetching getClusterCentroids with riderId ${riderId}: ${error.message}`);//th
+        throw new Error(`Database error fetching getClusterDefinitions with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(startYear) || !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: startYear and endYear must be an integer");
+    }
+
+    if ( !isIntegerValue(cluster)) {
+        throw new TypeError("Invalid parameter: cluster must be an integer");
+    }
+
+    let query = `
+    SELECT
+      rideid,
+      date,
+      distance,
+      speedavg,
+      speedmax,
+      cadence,
+      hravg,
+      hrmax,
+      title,
+      poweravg,
+      powermax,
+      bikeid,
+      coalesce(bikename, 'no bike') as bikename,
+      coalesce(stravaname, 'no bike') as stravaname,
+      stravaid,
+      comment,
+      elevationgain,
+      elapsedtime,
+      powernormalized,
+      intensityfactor,
+      tss,
+      matches,
+      trainer,
+      elevationloss,
+      datenotime,
+      device_name,
+      fracdim,
+      tags,
+      calculated_weight_kg,
+      cluster
+    FROM
+      get_rides_for_cluster($1, $2, $3, $4);
+    `;
+    const params = [riderId, startYear, endYear, cluster];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesforCluster for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesforCluster with riderId ${riderId}: ${error.message}`);//th
     }
 }
 
@@ -1544,6 +1740,7 @@ module.exports = {
     getRidesByYearMonth,
     getRidesByYearDOW,
     getRidesByDOMMonth,
+    getRidesforCluster,
     getRideById,
     getLookback,
     updateRide,
@@ -1551,7 +1748,9 @@ module.exports = {
     getSegmentEffortUpdateRequests,
     updateSegmentEffortUpdateRequest,
     getRidesForClustering,
+    getRidesForClusteringByYear,
     updateRidesForClustering,
     updateClusterCentroids,
     getClusterCentroids,
+    getClusterDefinitions
 };

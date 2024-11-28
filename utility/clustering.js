@@ -1,13 +1,14 @@
 const { kmeans } = require('ml-kmeans');
-const { isRiderId, isFastify } = require("../utility/general");
+const { isRiderId, isFastify, isIntegerValue } = require("../utility/general");
 const {
     getRidesForClustering,
+    getRidesForClusteringByYear,
     updateRidesForClustering,
     updateClusterCentroids,
     getClusterCentroids,
   } = require('../db/dbQueries');
 
-const clusterRides = async (fastify, riderId) => {
+const clusterRides = async (fastify, riderId, startYear, endYear) => {
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -16,9 +17,20 @@ const clusterRides = async (fastify, riderId) => {
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    const rows = await getRidesForClustering(fastify, riderId);
+    if ( !isIntegerValue(startYear)) {
+        throw new TypeError("Invalid parameter: startYearBack must be an integer");
+    }
 
-    const previousCentroids = await getClusterCentroids(fastify, riderId);
+    if ( !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: endYearBack must be an integer");
+    }
+
+    const rows = startYear < 2000 ?
+        await getRidesForClustering(fastify, riderId, startYear, endYear)
+        :
+        await getRidesForClusteringByYear(fastify, riderId, startYear, endYear);
+
+    const previousCentroids = await getClusterCentroids(fastify, riderId, startYear, endYear);
     const previousCentroidArray = convertToClusteredArrays(previousCentroids);
 
     // Separate `rideid` and clustering data
@@ -55,7 +67,7 @@ const clusterRides = async (fastify, riderId) => {
     }
 
     // Step 4: Write sorted cluster centroids to the database
-    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, sortedArray);
+    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, startYear, endYear, sortedArray);
     if (!updateResultCentroids) {
         return false;
     }
@@ -101,6 +113,8 @@ function convertToClusteredArrays(data) {
 
     // Map each object to an array of the specified values
     return sortedData.map(item => [
+        item.startyear,
+        item.endYear,
         item.distance,
         item.speedavg,
         item.elevationgain,

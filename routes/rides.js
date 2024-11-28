@@ -8,9 +8,11 @@ const {
   getRidesByYearMonth,
   getRidesByYearDOW,
   getRidesByDOMMonth,
+  getRidesforCluster,
   getRideById,
   getLookback,
   updateRide,
+  getClusterDefinitions,
 } = require('../db/dbQueries');
 const { clusterRides } = require('../utility/clustering');
 
@@ -202,6 +204,43 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const result = await getRidesByDOMMonth(fastify, id, domValue, monthValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/getRidesByCluster',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { startYear, endYear, cluster } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const start = parseInt(startYear, 10);
+    if (isNaN(start)) {
+      return reply.code(400).send({ error: 'Invalid or missing startYear' });
+    }
+
+    const end = parseInt(endYear, 10);
+    if (isNaN(end)) {
+      return reply.code(400).send({ error: 'Invalid or missing endYear' });
+    }
+
+    const clusterValue = parseInt(cluster, 10);
+    if (isNaN(clusterValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing cluster' });
+    }
+
+    try {
+      const result = await getRidesforCluster(fastify, id, start, end, clusterValue);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
@@ -419,16 +458,23 @@ async function ridesRoutes(fastify, options) {
   });
 
   fastify.get('/ride/cluster', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { riderId } = request.user; // Extracted from the JWT after authentication
+    const { riderId } = request.user;
+    const { startYearBack, endYearBack } = request.query;
 
     const id = parseInt(riderId, 10);
     if (isNaN(id)) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    try {
+    const start = parseInt(startYearBack, 10);
+    const end = parseInt(endYearBack, 10);
 
-      const result = await clusterRides(fastify, id);
+    if (isNaN(start) || isNaN(end)) {
+      return reply.code(400).send({ error: 'Invalid or missing startYearBack or endYearBack. Each must be positive integers and startYearBack > endYearBack' });
+    }
+
+    try {
+      const result = await clusterRides(fastify, id, start, end);
       if(result){
         reply.status(200).send({status: true, message: "Cluster values have been updated."});
       }
@@ -440,6 +486,26 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/ride/clusterDefinitions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getClusterDefinitions(fastify, id);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
 }
 
 module.exports = ridesRoutes;
