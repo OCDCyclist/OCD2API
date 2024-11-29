@@ -9,6 +9,7 @@ const {
   getRidesByYearDOW,
   getRidesByDOMMonth,
   getRidesforCluster,
+  getRidesforCentroid,
   getRideById,
   getLookback,
   updateRide,
@@ -241,6 +242,38 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const result = await getRidesforCluster(fastify, id, start, end, clusterValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/getRidesByCentroid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { startYear, endYear } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const start = parseInt(startYear, 10);
+    if (isNaN(start)) {
+      return reply.code(400).send({ error: 'Invalid or missing startYear' });
+    }
+
+    const end = parseInt(endYear, 10);
+    if (isNaN(end)) {
+      return reply.code(400).send({ error: 'Invalid or missing endYear' });
+    }
+
+    try {
+      const result = await getRidesforCentroid(fastify, id, start, end);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);

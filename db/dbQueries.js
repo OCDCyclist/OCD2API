@@ -1283,7 +1283,7 @@ const getSegmentEfforts = async (fastify, riderId, segmentId) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    if( !isIntegerValueValue(Number(segmentId))){
+    if( !isIntegerValue(Number(segmentId))){
         throw new TypeError("Invalid parameter: segmentId must be an integer");
     }
     let query = `
@@ -1716,6 +1716,69 @@ const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster)
     }
 }
 
+const getRidesforCentroid = async (fastify, riderId, startYear, endYear) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(startYear) || !isIntegerValue(endYear)) {
+        throw new TypeError("Invalid parameter: startYear and endYear must be an integer");
+    }
+
+    let query = `
+    SELECT
+      rideid,
+      date,
+      distance,
+      speedavg,
+      speedmax,
+      cadence,
+      hravg,
+      hrmax,
+      title,
+      poweravg,
+      powermax,
+      bikeid,
+      coalesce(bikename, 'no bike') as bikename,
+      coalesce(stravaname, 'no bike') as stravaname,
+      stravaid,
+      comment,
+      elevationgain,
+      elapsedtime,
+      powernormalized,
+      intensityfactor,
+      tss,
+      matches,
+      trainer,
+      elevationloss,
+      datenotime,
+      device_name,
+      fracdim,
+      tags,
+      calculated_weight_kg,
+      cluster,
+      clusterIndex
+    FROM
+      get_all_rides_for_cluster($1, $2, $3);
+    `;
+    const params = [riderId, startYear, endYear];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesforCluster for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesforCluster with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -1752,5 +1815,6 @@ module.exports = {
     updateRidesForClustering,
     updateClusterCentroids,
     getClusterCentroids,
+    getRidesforCentroid,
     getClusterDefinitions
 };
