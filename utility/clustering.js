@@ -1,14 +1,14 @@
 const { kmeans } = require('ml-kmeans');
 const { isRiderId, isFastify, isIntegerValue } = require("../utility/general");
 const {
-    getRidesForClustering,
     getRidesForClusteringByYear,
     updateRidesForClustering,
     updateClusterCentroids,
     getClusterCentroids,
+    getClusterDefinition,
   } = require('../db/dbQueries');
 
-const clusterRides = async (fastify, riderId, startYear, endYear) => {
+const clusterRides = async (fastify, riderId, clusterId) => {
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -17,20 +17,20 @@ const clusterRides = async (fastify, riderId, startYear, endYear) => {
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    if ( !isIntegerValue(startYear)) {
-        throw new TypeError("Invalid parameter: startYearBack must be an integer");
+    if ( !isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
     }
 
-    if ( !isIntegerValue(endYear)) {
-        throw new TypeError("Invalid parameter: endYearBack must be an integer");
+    // Lookup cluster definition for request startYear and endYear
+    const clusterDefinitions = await getClusterDefinition(fastify, riderId, clusterId);
+    if ( !Array.isArray(clusterDefinitions) || clusterDefinitions.length === 0) {
+        throw new TypeError("Invalid cluster definition: there must be a unique cluster to use");
     }
+    const clusterDefinition = clusterDefinitions[0];
 
-    const rows = startYear < 2000 ?
-        await getRidesForClustering(fastify, riderId, startYear, endYear)
-        :
-        await getRidesForClusteringByYear(fastify, riderId, startYear, endYear);
+    const rows = await getRidesForClusteringByYear(fastify, riderId, clusterDefinition.clusterid);
 
-    const previousCentroids = await getClusterCentroids(fastify, riderId, startYear, endYear);
+    const previousCentroids = await getClusterCentroids(fastify, riderId, clusterDefinition.clusterid);
     const previousCentroidArray = convertToClusteredArrays(previousCentroids);
 
     // Separate `rideid` and clustering data
@@ -57,6 +57,7 @@ const clusterRides = async (fastify, riderId, startYear, endYear) => {
     // Prepare data for insertion
     const clusterData = rideIds.map((rideid, index) => ({
         rideid,
+        clusterid: clusterDefinition.clusterid,
         cluster: translatedIndices[index],
     }));
 
@@ -67,7 +68,7 @@ const clusterRides = async (fastify, riderId, startYear, endYear) => {
     }
 
     // Step 4: Write sorted cluster centroids to the database
-    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, startYear, endYear, sortedArray);
+    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, clusterDefinition.clusterid, sortedArray);
     if (!updateResultCentroids) {
         return false;
     }

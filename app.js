@@ -67,14 +67,15 @@ fastify.decorate("authenticate", async function(request, reply) {
 });
 
 // Register routes from the routes directory
+fastify.register(require('./routes/check'));
+fastify.register(require('./routes/cluster'));
 fastify.register(require('./routes/dashboard'));
-fastify.register(require('./routes/rides'));
 fastify.register(require('./routes/ocds'));
 fastify.register(require('./routes/riders'));
-fastify.register(require('./routes/strava'));
+fastify.register(require('./routes/rides'));
 fastify.register(require('./routes/segments'));
+fastify.register(require('./routes/strava'));
 fastify.register(require('./routes/user'));
-fastify.register(require('./routes/check'));
 
 // Expose a route to generate JWT token (for testing purposes)
 fastify.post('/token', (request, reply) => {
