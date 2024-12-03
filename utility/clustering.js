@@ -6,7 +6,7 @@ const {
     updateClusterCentroids,
     getClusterCentroids,
     getClusterDefinition,
-  } = require('../db/dbQueries');
+} = require('../db/dbQueries');
 
 const clusterRides = async (fastify, riderId, clusterId) => {
     if (!isFastify(fastify)) {
@@ -43,14 +43,35 @@ const clusterRides = async (fastify, riderId, clusterId) => {
         row.powernormalized,
     ]);
 
-    // Step 2: Apply k-means clustering
+    //  Normalize the data (min-max scaling)
+    const minMax = data[0].map((_, colIdx) => {
+        const col = data.map(row => row[colIdx]);
+        return { min: Math.min(...col), max: Math.max(...col) };
+    });
+
+    const normalize = data =>
+        data.map(row =>
+          row.map((val, colIdx) => (val - minMax[colIdx].min) / (minMax[colIdx].max - minMax[colIdx].min))
+    );
+
+    const normalizedData = normalize(data);
+
+    // Apply k-means clustering
     const k = 4; // Number of clusters
-    const kmeansResult = kmeans(data, k, {maxIterations: 50});
+    const kmeansResult = kmeans(normalizedData, k, {maxIterations: 50});
 
     const { clusters, centroids } = kmeansResult;
 
+    // Convert centroids back to the original scale
+    const revertNormalization = centroids =>
+        centroids.map(centroid =>
+        centroid.map((val, colIdx) => val * (minMax[colIdx].max - minMax[colIdx].min) + minMax[colIdx].min)
+    );
+
+    const originalCentroids = revertNormalization(centroids);
+
     // Sort newArray and get index mapping
-    const { sortedArray, indexMapping } = sortByEuclideanDistanceWithIndices(previousCentroidArray, centroids);
+    const { sortedArray, indexMapping } = sortByEuclideanDistanceWithIndices(previousCentroidArray, originalCentroids);
 
     const translatedIndices = translateIndices(clusters, indexMapping);
 

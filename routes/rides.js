@@ -12,7 +12,6 @@ const {
   getLookback,
   updateRide,
 } = require('../db/dbQueries');
-const { clusterRides } = require('../utility/clustering');
 
 async function ridesRoutes(fastify, options) {
 

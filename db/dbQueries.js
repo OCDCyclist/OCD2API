@@ -1545,7 +1545,7 @@ const getClusterCentroids = async (fastify, riderId, clusterid) =>{
     }
 }
 
-const getClusterDefinitions = async (fastify, riderId) =>{
+const getClusterCentroidDefinitions = async (fastify, riderId) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1748,7 +1748,7 @@ const getDistinctClusterCentroids = async (fastify, riderId) =>{
 }
 
 const getClusterDefinition = async (fastify, riderId, clusterId) =>{
-    // Returns the single record that defines the clustering to do for the requiest startYear and endYear.
+    // Returns the single record that defines the clustering to do for the requested clusterid.
     // It should return only one record if valid and zero records if invalid.
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -1784,10 +1784,51 @@ const getClusterDefinition = async (fastify, riderId, clusterId) =>{
         if(Array.isArray(rows)){
             return rows;
         }
-        throw new Error(`Invalid data for getClusterDefinition for riderId ${riderId}`);//th
+        throw new Error(`Invalid data for getClusterDefinition for riderId ${riderId} clusterid ${clusterId}`);//th
 
     } catch (error) {
-        throw new Error(`Database error fetching getClusterDefinition with riderId ${riderId}: ${error.message}`);//th
+        throw new Error(`Database error fetching getClusterDefinition with riderId ${riderId} clusterid ${clusterId}: ${error.message}`);//th
+    }
+}
+
+const getAllClusterDefinitions = async (fastify, riderId) =>{
+    // Returns the all cluster definitions for the riderid.
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    const params = [riderId];
+
+    let query = `
+        SELECT
+            clusterid,
+            startyear,
+            endyear,
+            clustercount,
+            fields,
+            active
+        FROM
+            clusters
+        WHERE
+            riderid = $1
+        ORDER BY
+            startyear,
+            endyear;
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getAllClusterDefinitions for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getAllClusterDefinitions for riderId ${riderId}: ${error.message}`);//th
     }
 }
 
@@ -1827,6 +1868,43 @@ const getActiveCentroid = async (fastify, riderId) =>{
     }
 }
 
+const setClusterActive = async (fastify, riderId, clusterId) =>{
+    // Set the selected cluster to be active and sets all other clusters to be inactive
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
+    }
+
+    const params = [riderId, clusterId];
+
+    let query = `
+        UPDATE public.clusters
+        SET active = CASE
+                        WHEN clusterid = $2 THEN TRUE
+                        ELSE FALSE
+                    END
+        WHERE riderid = $1;
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for clusterSetActive for riderId ${riderId} clusterId ${clusterId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getActiveCentroid with riderId ${riderId} clusterId ${clusterId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -1863,8 +1941,10 @@ module.exports = {
     updateClusterCentroids,
     getClusterCentroids,
     getRidesforCentroid,
-    getClusterDefinitions,
+    getClusterCentroidDefinitions,
     getDistinctClusterCentroids,
     getClusterDefinition,
+    getAllClusterDefinitions,
     getActiveCentroid,
+    setClusterActive,
 };
