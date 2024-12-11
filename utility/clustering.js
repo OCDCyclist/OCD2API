@@ -8,6 +8,43 @@ const {
     getClusterDefinition,
 } = require('../db/dbQueries');
 
+
+// Convert centroids back to the original scale
+const revertNormalization = (normalizedCentroidsToRevert, minMax) =>
+    normalizedCentroidsToRevert.map(normalizedCentroid =>
+    normalizedCentroid.map((val, colIdx) => val * (minMax[colIdx].max - minMax[colIdx].min) + minMax[colIdx].min)
+);
+
+const minMaxValues = (data) =>{
+    if( !Array.isArray(data) || data.length === 0){ return [];}
+    //  Normalize the data (min-max scaling)
+    const minMax = data[0].map((_, colIdx) => {
+        const col = data.map(row => row[colIdx]);
+        return { min: Math.min(...col), max: Math.max(...col) };
+    });
+    return minMax;
+};
+
+const normalize = data =>{
+    const minMax = minMaxValues(data);
+    const normalized = data.map(row =>
+        row.map((val, colIdx) => (val - minMax[colIdx].min) / (minMax[colIdx].max - minMax[colIdx].min))
+    );
+    return [minMax, normalized];
+};
+
+const combineScaledAndNormalizedArray = (scaled, normalized)=>{
+    if(!Array.isArray(scaled) || !Array.isArray(normalized)) return [];
+    if(scaled.length === 0 || normalized.length === 0) return [];
+    if(scaled.length !== normalized.length) return [];
+
+    const combined = scaled.map((scaledInnerArray, index) => {
+        const normalizedInnerArray = normalized[index];
+        return [...scaledInnerArray, ...normalizedInnerArray];
+    });
+    return combined;
+};
+
 const clusterRides = async (fastify, riderId, clusterId) => {
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -21,7 +58,7 @@ const clusterRides = async (fastify, riderId, clusterId) => {
         throw new TypeError("Invalid parameter: clusterId must be an integer");
     }
 
-    // Lookup cluster definition for request startYear and endYear
+    // Lookup cluster definition
     const clusterDefinitions = await getClusterDefinition(fastify, riderId, clusterId);
     if ( !Array.isArray(clusterDefinitions) || clusterDefinitions.length === 0) {
         throw new TypeError("Invalid cluster definition: there must be a unique cluster to use");
@@ -29,9 +66,6 @@ const clusterRides = async (fastify, riderId, clusterId) => {
     const clusterDefinition = clusterDefinitions[0];
 
     const rows = await getRidesForClusteringByYear(fastify, riderId, clusterDefinition.clusterid);
-
-    const previousCentroids = await getClusterCentroids(fastify, riderId, clusterDefinition.clusterid);
-    const previousCentroidArray = convertToClusteredArrays(previousCentroids);
 
     // Separate `rideid` and clustering data
     const rideIds = rows.map(row => row.rideid);
@@ -43,37 +77,22 @@ const clusterRides = async (fastify, riderId, clusterId) => {
         row.powernormalized,
     ]);
 
-    //  Normalize the data (min-max scaling)
-    const minMax = data[0].map((_, colIdx) => {
-        const col = data.map(row => row[colIdx]);
-        return { min: Math.min(...col), max: Math.max(...col) };
-    });
-
-    const normalize = data =>
-        data.map(row =>
-          row.map((val, colIdx) => (val - minMax[colIdx].min) / (minMax[colIdx].max - minMax[colIdx].min))
-    );
-
-    const normalizedData = normalize(data);
+    const[minMax, normalized] = normalize(data);
 
     // Apply k-means clustering
     const k = 4; // Number of clusters
-    const kmeansResult = kmeans(normalizedData, k, {maxIterations: 50});
+    const kmeansNormalizedResult = kmeans(normalized, k, {maxIterations: 50});
 
-    const { clusters, centroids } = kmeansResult;
+    const { clusters: newClusters, centroids: newCentroidsNormalized } = kmeansNormalizedResult;
 
-    // Convert centroids back to the original scale
-    const revertNormalization = centroids =>
-        centroids.map(centroid =>
-        centroid.map((val, colIdx) => val * (minMax[colIdx].max - minMax[colIdx].min) + minMax[colIdx].min)
-    );
+    const oldCentroidRecords = await getClusterCentroids(fastify, riderId, clusterDefinition.clusterid, 'normalized');
 
-    const originalCentroids = revertNormalization(centroids);
-
+    const oldCentroidNormalized = convertToClusteredArrays(oldCentroidRecords, true);
     // Sort newArray and get index mapping
-    const { sortedArray, indexMapping } = sortByEuclideanDistanceWithIndices(previousCentroidArray, originalCentroids);
+    const { sortedArray, indexMapping } = sortByEuclideanDistanceWithIndices(oldCentroidNormalized, newCentroidsNormalized);
 
-    const translatedIndices = translateIndices(clusters, indexMapping);
+    const translatedIndices = translateIndices(newClusters, indexMapping);
+    const newCentroidsScaled = revertNormalization(sortedArray, minMax);
 
     // Prepare data for insertion
     const clusterData = rideIds.map((rideid, index) => ({
@@ -82,14 +101,17 @@ const clusterRides = async (fastify, riderId, clusterId) => {
         cluster: translatedIndices[index],
     }));
 
-    // Step 3: Write cluster data to the database
+    // Write cluster data to the database
     const updateResultClusters = await updateRidesForClustering(fastify, riderId, clusterData);
     if (!updateResultClusters) {
         return false;
     }
 
-    // Step 4: Write sorted cluster centroids to the database
-    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, clusterDefinition.clusterid, sortedArray);
+    // Combine the scale and normalized data into one array
+    const newCentroidData = combineScaledAndNormalizedArray(newCentroidsScaled, sortedArray);
+
+    // Write normalized and scaled cluster centroids to the database
+    const updateResultCentroids = await updateClusterCentroids(fastify, riderId, clusterDefinition.clusterid, newCentroidData);
     if (!updateResultCentroids) {
         return false;
     }
@@ -129,20 +151,29 @@ function sortByEuclideanDistanceWithIndices(arr1, arr2) {
     return { sortedArray, indexMapping };
 }
 
-function convertToClusteredArrays(data) {
+function convertToClusteredArrays(data, useNormalized) {
     // Sort data by cluster index
     const sortedData = data.slice().sort((a, b) => a.cluster - b.cluster);
 
     // Map each object to an array of the specified values
-    return sortedData.map(item => [
-        item.startyear,
-        item.endYear,
-        item.distance,
-        item.speedavg,
-        item.elevationgain,
-        item.hravg,
-        item.powernormalized
-    ]);
+    if(useNormalized){
+        return sortedData.map(item => [
+            item.distance_n,
+            item.speedavg_n,
+            item.elevationgain_n,
+            item.hravg_n,
+            item.powernormalized_n
+        ]);
+        }
+    else{
+        return sortedData.map(item => [
+            item.distance,
+            item.speedavg,
+            item.elevationgain,
+            item.hravg,
+            item.powernormalized
+        ]);
+    }
 }
 
 module.exports = { clusterRides };

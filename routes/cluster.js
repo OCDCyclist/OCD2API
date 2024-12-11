@@ -1,8 +1,11 @@
 const {
   getRidesforCluster,
   getRidesforCentroid,
+  setClusterCentroidName,
+  setClusterCentroidColor,
   getClusterCentroidDefinitions,
   getAllClusterDefinitions,
+  getClusterDefinition,
   getDistinctClusterCentroids,
   getActiveCentroid,
   setClusterActive,
@@ -110,7 +113,7 @@ async function clusterRoutes(fastify, options) {
       // After successfully updating a cluster run the code to update the tags
       try {
           // this updates ride metrics like intensity factor, TSS
-          const updateClusterTags = 'CALL update_ride_clusters_with_tags_year_range($1,$2)';
+          const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
           await fastify.pg.query(updateClusterTags, [riderId, clusterIdValue]);
       } catch (updateError) {
           console.error('Error updating cluster tags', updateError);
@@ -136,22 +139,22 @@ async function clusterRoutes(fastify, options) {
     try {
       const result = await setClusterActive(fastify, id, clusterIdValue);
       if(result){
-        reply.status(200).send({status: true, message: "Cluster values have been updated."});
+        reply.status(200).send({status: true, message: "Cluster has been set active."});
       }
       else{
-        reply.status(500).send({ error: 'Unable to update cluster values' });
+        reply.status(500).send({ error: 'Unable to set cluster active' });
       }
 
     } catch (error) {
       console.error('Error clustering rides:', error);
-      reply.status(500).send({ error: 'An error occurred while clustering rides' });
+      reply.status(500).send({ error: 'An error occurred while setting a cluster active' });
     }
 
     setImmediate(async () => {
       // After successfully updating a cluster run the code to update the tags
       try {
           // this updates ride metrics like intensity factor, TSS
-          const updateClusterTags = 'CALL update_ride_clusters_with_tags_year_range($1,$2)';
+          const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
           await fastify.pg.query(updateClusterTags, [riderId, clusterIdValue]);
       } catch (updateError) {
           console.error('Error updating cluster tags', updateError);
@@ -159,7 +162,85 @@ async function clusterRoutes(fastify, options) {
     });
   });
 
-  fastify.get('/cluster/clusterDefinitions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+  fastify.post('/cluster/centroid/name', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { clusterId, cluster, name } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const clusterIdValue = parseInt(clusterId, 10);
+
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing centroidId value' });
+    }
+
+    const clusterNumber = parseInt(cluster, 10);
+    if (isNaN(clusterNumber)) {
+      return reply.code(400).send({ error: 'Invalid or missing centroied number' });
+    }
+
+    if (typeof(name) !== 'string' || name.length > 15) {
+      return reply.code(400).send({ error: 'Invalid or missing centroid name' });
+    }
+
+    try {
+      const result = await setClusterCentroidName(fastify, id, clusterIdValue, clusterNumber, name);
+      if(result){
+        reply.status(200).send({status: true, message: "Centroid name has been updated."});
+      }
+      else{
+        reply.status(500).send({ error: 'Unable to update centroid name' });
+      }
+
+    } catch (error) {
+      console.error('Error updating centroid name:', error);
+      reply.status(500).send({ error: 'An error occurred while updating centroid name' });
+    }
+  });
+
+  fastify.post('/cluster/centroid/color', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { clusterId, cluster, color } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const clusterIdValue = parseInt(clusterId, 10);
+
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing centroidId value' });
+    }
+
+    const clusterNumber = parseInt(cluster, 10);
+    if (isNaN(clusterNumber)) {
+      return reply.code(400).send({ error: 'Invalid or missing centroied number' });
+    }
+
+    if (typeof(name) !== 'string' || name.length > 10) {
+      return reply.code(400).send({ error: 'Invalid or missing centroid color' });
+    }
+
+    try {
+      const result = await setClusterCentroidColor(fastify, id, clusterIdValue, clusterNumber, color);
+      if(result){
+        reply.status(200).send({status: true, message: "Centroid color has been updated."});
+      }
+      else{
+        reply.status(500).send({ error: 'Unable to update centroid color' });
+      }
+
+    } catch (error) {
+      console.error('Error updating centroid name:', error);
+      reply.status(500).send({ error: 'An error occurred while updating centroid color' });
+    }
+  });
+
+  fastify.get('/cluster/allClusterCentroids', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
 
     const id = parseInt(riderId, 10);
@@ -198,6 +279,34 @@ async function clusterRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/cluster/getClusterDefinition', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { clusterId } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const clusterIdValue = parseInt(clusterId, 10);
+
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing clusterIdValue' });
+    }
+
+    try {
+      const result = await getClusterDefinition(fastify, id, clusterIdValue);
+
+      if (!Array.isArray(result) || result.length === 0) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result[0]);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: `Database error: ${error.message}` });
     }
   });
 

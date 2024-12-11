@@ -1476,15 +1476,20 @@ const updateClusterCentroids = async (fastify, riderId, clusterid, centroids) =>
     }
 
     const insertCentroidQuery = `
-        INSERT INTO cluster_centroids (riderid, clusterid, cluster, distance, speedavg, elevationgain, hravg, powernormalized)
-        VALUES ($1, $2, $3, ROUND($4, 2), ROUND($5, 2), ROUND($6, 2), ROUND($7, 2), ROUND($8, 2))
+        INSERT INTO cluster_centroids (riderid, clusterid, cluster, distance, speedavg, elevationgain, hravg, powernormalized, distance_n, speedavg_n, elevationgain_n, hravg_n, powernormalized_n)
+        VALUES ($1, $2, $3, ROUND($4, 2), ROUND($5, 2), ROUND($6, 2), ROUND($7, 2), ROUND($8, 2), ROUND($9, 2), ROUND($10, 2), ROUND($11, 2), ROUND($12, 2), ROUND($13, 2))
         ON CONFLICT (riderid, clusterid, cluster) DO UPDATE
         SET
             distance = ROUND(EXCLUDED.distance, 2),
             speedavg = ROUND(EXCLUDED.speedavg, 2),
             elevationgain = ROUND(EXCLUDED.elevationgain, 2),
             hravg = ROUND(EXCLUDED.hravg, 2),
-            powernormalized = ROUND(EXCLUDED.powernormalized, 2);
+            powernormalized = ROUND(EXCLUDED.powernormalized, 2),
+            distance_n = ROUND(EXCLUDED.distance_n, 2),
+            speedavg_n = ROUND(EXCLUDED.speedavg_n, 2),
+            elevationgain_n = ROUND(EXCLUDED.elevationgain_n, 2),
+            hravg_n = ROUND(EXCLUDED.hravg_n, 2),
+            powernormalized_n = ROUND(EXCLUDED.powernormalized_n, 2);
         `;
 
     let count = 0;
@@ -1499,7 +1504,7 @@ const updateClusterCentroids = async (fastify, riderId, clusterid, centroids) =>
     return count > 0;
 }
 
-const getClusterCentroids = async (fastify, riderId, clusterid) =>{
+const getAllClusterCentroids = async (fastify, riderId) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1508,29 +1513,25 @@ const getClusterCentroids = async (fastify, riderId, clusterid) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    if ( !isIntegerValue(clusterid)) {
-        throw new TypeError("Invalid parameter: clusterid must be a valid balue");
-    }
-
-    const params = [riderId, clusterid];
+    const params = [riderId];
 
     let query = `
         SELECT
-            a.clusterid,
-            a.startyear,
-            a.endyear,
-            b.cluster,
             b.distance,
             b.speedavg,
             b.elevationgain,
             b.hravg,
-            b.powernormalized
+            b.powernormalized,
+            b.distance_n,
+            b.speedavg_n,
+            b.elevationgain_n,
+            b.hravg_n,
+            b.powernormalized_n
         FROM
             clusters a inner join cluster_centroids b
             on a.clusterid = b.clusterid
         WHERE
-            a.riderid = $1
-            and a.clusterid = $2;
+            a.riderid = $1;
     `;
 
     try {
@@ -1538,10 +1539,10 @@ const getClusterCentroids = async (fastify, riderId, clusterid) =>{
         if(Array.isArray(rows)){
             return rows;
         }
-        throw new Error(`Invalid data for getClusterCentroids for riderId ${riderId}`);//th
+        throw new Error(`Invalid data for getAllClusterCentroids for riderId ${riderId}`);//th
 
     } catch (error) {
-        throw new Error(`Database error fetching getClusterCentroids with riderId ${riderId}: ${error.message}`);//th
+        throw new Error(`Database error fetching getAllClusterCentroids with riderId ${riderId}: ${error.message}`);//th
     }
 }
 
@@ -1558,6 +1559,7 @@ const getClusterCentroidDefinitions = async (fastify, riderId) =>{
 
     let query = `
         SELECT
+            clusterid,
             startYear,
             endYear,
             cluster,
@@ -1567,9 +1569,14 @@ const getClusterCentroidDefinitions = async (fastify, riderId) =>{
             hravg,
             powernormalized,
             name,
+            color,
             ride_count
         FROM
             get_cluster_definitions_with_ride_counts($1)
+        ORDER BY
+            startYear,
+            endYear,
+            cluster;
     `;
 
     try {
@@ -1771,6 +1778,7 @@ const getClusterDefinition = async (fastify, riderId, clusterId) =>{
             endyear,
             clustercount,
             fields,
+            colors,
             active
         FROM
             clusters
@@ -1810,6 +1818,7 @@ const getAllClusterDefinitions = async (fastify, riderId) =>{
             endyear,
             clustercount,
             fields,
+            colors,
             active
         FROM
             clusters
@@ -1905,6 +1914,136 @@ const setClusterActive = async (fastify, riderId, clusterId) =>{
     }
 }
 
+const getClusterCentroids = async (fastify, riderId, clusterid) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterid)) {
+        throw new TypeError("Invalid parameter: clusterid must be a valid balue");
+    }
+
+    const params = [riderId, clusterid];
+
+    let query = `
+        SELECT
+            a.clusterid,
+            a.startyear,
+            a.endyear,
+            b.cluster,
+            b.distance,
+            b.speedavg,
+            b.elevationgain,
+            b.hravg,
+            b.powernormalized
+        FROM
+            clusters a inner join cluster_centroids b
+            on a.clusterid = b.clusterid
+        WHERE
+            a.riderid = $1
+            and a.clusterid = $2;
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getClusterCentroids for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getClusterCentroids with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const setClusterCentroidName = async (fastify, riderId, clusterId, clusterNumber, name) =>{
+    // Set the selected cluster to be active and sets all other clusters to be inactive
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterNumber)) {
+        throw new TypeError("Invalid parameter: clusterNumber must be an integer");
+    }
+
+    if ( typeof(name) !== 'string') {
+        throw new TypeError("Invalid parameter: name must be valid text");
+    }
+
+    const params = [riderId, clusterId, clusterNumber, name];
+
+    let query = `
+        UPDATE public.cluster_centroids
+        SET name = $4
+        WHERE riderid = $1 and clusterid = $2 and cluster = $3
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for setClusterCentroidName for riderId ${riderId} clusterId ${clusterId} cluster ${clusterNumber}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getActiveCentroid with riderId ${riderId} clusterId ${clusterId} cluster ${clusterNumber}: ${error.message}`);//th
+    }
+}
+
+const setClusterCentroidColor = async (fastify, riderId, clusterId, clusterNumber, color) =>{
+    // Set the selected cluster to be active and sets all other clusters to be inactive
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterNumber)) {
+        throw new TypeError("Invalid parameter: clusterNumber must be an integer");
+    }
+
+    if ( typeof(color) !== 'string') {
+        throw new TypeError("Invalid parameter: color must be valid text");
+    }
+
+    const params = [riderId, clusterId, clusterNumber, color];
+
+    let query = `
+        UPDATE public.cluster_centroids
+        SET color = $4
+        WHERE riderid = $1 and clusterid = $2 and cluster = $3
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for setClusterCentroidColor for riderId ${riderId} clusterId ${clusterId} cluster ${clusterNumber}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching setClusterCentroidColor with riderId ${riderId} clusterId ${clusterId} cluster ${clusterNumber}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -1939,7 +2078,7 @@ module.exports = {
     getRidesForClusteringByYear,
     updateRidesForClustering,
     updateClusterCentroids,
-    getClusterCentroids,
+    getAllClusterCentroids,
     getRidesforCentroid,
     getClusterCentroidDefinitions,
     getDistinctClusterCentroids,
@@ -1947,4 +2086,7 @@ module.exports = {
     getAllClusterDefinitions,
     getActiveCentroid,
     setClusterActive,
+    getClusterCentroids,
+    setClusterCentroidName,
+    setClusterCentroidColor,
 };
