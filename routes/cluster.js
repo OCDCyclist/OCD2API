@@ -9,6 +9,8 @@ const {
   getDistinctClusterCentroids,
   getActiveCentroid,
   setClusterActive,
+  deleteCluster,
+  upsertCluster,
 } = require('../db/dbQueries');
 const { clusterRides } = require('../utility/clustering');
 
@@ -53,22 +55,22 @@ async function clusterRoutes(fastify, options) {
 
   fastify.get('/cluster/getRidesByCentroid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
-    const { clusterid } = request.query;
-
-    let clusteridToUse = clusterid;
+    const { clusterId } = request.query;
 
     const id = parseInt(riderId, 10);
     if (isNaN(id)) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    if( !clusteridToUse || clusteridToUse === 0 ){
+    const clusterIdValue = parseInt(clusterId, 10);
+
+    if( !clusterIdValue || clusterIdValue === 0 ){
       const row = await getActiveCentroid(fastify, id);
-      clusteridToUse = row.length > 0 ? row[0].clusterid : 0;
+      clusterIdValue = 6;//row.length > 0 ? row[0].clusterid : 0;
     }
 
     try {
-      const result = await getRidesforCentroid(fastify, id, clusteridToUse);
+      const result = await getRidesforCentroid(fastify, id, clusterIdValue);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
@@ -162,6 +164,30 @@ async function clusterRoutes(fastify, options) {
     });
   });
 
+  fastify.get('/cluster/delete', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { clusterid } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const clusterIdValue = parseInt(clusterid, 10);
+
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing clusterId' });
+    }
+
+    try {
+      await deleteCluster(fastify, id, clusterIdValue);
+      reply.status(200).send({status: true, message: "Cluster has been deleted."});
+    } catch (error) {
+      console.error('Error clustering rides:', error);
+      reply.status(500).send({ error: 'An error occurred while deleting a cluster' });
+    }
+  });
+
   fastify.post('/cluster/centroid/name', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
     const { clusterId, cluster, name } = request.body;
@@ -199,6 +225,17 @@ async function clusterRoutes(fastify, options) {
       console.error('Error updating centroid name:', error);
       reply.status(500).send({ error: 'An error occurred while updating centroid name' });
     }
+
+    setImmediate(async () => {
+      // After successfully updating a cluster run the code to update the tags
+      try {
+          // this updates ride metrics like intensity factor, TSS
+          const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
+          await fastify.pg.query(updateClusterTags, [riderId, clusterIdValue]);
+      } catch (updateError) {
+          console.error('Error updating cluster tags', updateError);
+      }
+    });
   });
 
   fastify.post('/cluster/centroid/color', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -221,7 +258,7 @@ async function clusterRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing centroied number' });
     }
 
-    if (typeof(name) !== 'string' || name.length > 10) {
+    if (typeof(color) !== 'string' || color.length > 10) {
       return reply.code(400).send({ error: 'Invalid or missing centroid color' });
     }
 
@@ -238,6 +275,17 @@ async function clusterRoutes(fastify, options) {
       console.error('Error updating centroid name:', error);
       reply.status(500).send({ error: 'An error occurred while updating centroid color' });
     }
+
+    setImmediate(async () => {
+      // After successfully updating a cluster run the code to update the tags
+      try {
+          // this updates ride metrics like intensity factor, TSS
+          const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
+          await fastify.pg.query(updateClusterTags, [riderId, clusterIdValue]);
+      } catch (updateError) {
+          console.error('Error updating cluster tags', updateError);
+      }
+    });
   });
 
   fastify.get('/cluster/allClusterCentroids', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -328,6 +376,59 @@ async function clusterRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: `Database error: ${error.message}` });
+    }
+  });
+
+  fastify.post('/cluster/update', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { clusterId, startyear, endyear, clustercount, fields, active } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const clusterIdValue =  clusterId === undefined ? -1 : parseInt(clusterId, 10);
+
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing clusterId value' });
+    }
+
+    const start = parseInt(startyear, 10);
+    if (isNaN(start)) {
+      return reply.code(400).send({ error: 'Invalid or missing start year' });
+    }
+
+    const end = parseInt(endyear, 10);
+    if (isNaN(end)) {
+      return reply.code(400).send({ error: 'Invalid or missing end year' });
+    }
+
+    const count = parseInt(clustercount, 10);
+    if (isNaN(count)) {
+      return reply.code(400).send({ error: 'Invalid or missing cluster count' });
+    }
+
+    if (typeof(fields) !== 'string') {
+      return reply.code(400).send({ error: 'Invalid or missing fields value' });
+    }
+
+    if (typeof(active) !== 'boolean') {
+      return reply.code(400).send({ error: 'Invalid or active flag' });
+    }
+
+    try {
+      const result = await upsertCluster(fastify, riderId, clusterIdValue, start, end, count, fields, active);
+      if(result){
+        reply.status(200).send({status: true, message: "Cluster has been created or updated."});
+      }
+      else{
+        reply.status(500).send({ error: 'Unable to update cluster' });
+      }
+
+    } catch (error) {
+      console.error('Error creating or updating cluster:', error);
+      reply.status(500).send({ error: 'An error occurred while creating or update the cluster' });
     }
   });
 }

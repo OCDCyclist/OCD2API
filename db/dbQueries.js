@@ -1702,6 +1702,7 @@ const getRidesforCentroid = async (fastify, riderId, clusterId) =>{
         tags,
         calculated_weight_kg,
         cluster,
+        color,
         clusterIndex
         FROM
         get_all_rides_for_cluster($1, $2);
@@ -1732,16 +1733,20 @@ const getDistinctClusterCentroids = async (fastify, riderId) =>{
     const params = [riderId];
 
     let query = `
-		SELECT
-			startyear,
-			endyear,
-			active
+        SELECT
+            clusterid,
+            startyear,
+            endyear,
+            clustercount,
+            active
         FROM
             clusters
         WHERE
-            riderid = $1;
-    `;
-
+            riderid = $1
+        ORDER BY
+            startYear,
+            endYear,
+            clustercount;`;
     try {
         const { rows } = await fastify.pg.query(query, params);
         if(Array.isArray(rows)){
@@ -1778,7 +1783,6 @@ const getClusterDefinition = async (fastify, riderId, clusterId) =>{
             endyear,
             clustercount,
             fields,
-            colors,
             active
         FROM
             clusters
@@ -1818,7 +1822,6 @@ const getAllClusterDefinitions = async (fastify, riderId) =>{
             endyear,
             clustercount,
             fields,
-            colors,
             active
         FROM
             clusters
@@ -2044,6 +2047,66 @@ const setClusterCentroidColor = async (fastify, riderId, clusterId, clusterNumbe
     }
 }
 
+const upsertCluster = async (fastify, riderId, clusterId, startyear, endyear, clustercount, fields, active) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    try{
+        const { rows } = await fastify.pg.query(`
+            INSERT INTO public.clusters (riderid, startyear, endyear, clustercount, fields, active)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (riderid, startyear, endyear)
+            DO UPDATE SET
+                clustercount = EXCLUDED.clustercount,
+                fields = EXCLUDED.fields,
+                active = EXCLUDED.active,
+                insertdttm = CURRENT_TIMESTAMP
+            RETURNING clusterid;`,  [
+                riderId,
+                startyear,
+                endyear,
+                clustercount,
+                fields,
+                active,
+                ]
+            );
+         return rows[0]?.clusterid;
+    }
+    catch(err){
+        console.error('Database error in upsertCluster:', err);
+        return null;
+    }
+}
+
+const deleteCluster = async (fastify, riderId, clusterId) =>{
+    // Set the selected cluster to be active and sets all other clusters to be inactive
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
+    }
+
+    const params = [riderId, clusterId];
+
+    const query = `
+       SELECT delete_cluster($1, $2);
+    `;
+    try {
+        await fastify.pg.query(query, params);
+
+    } catch (error) {
+        throw new Error(`Database error fetching deleteCluster with riderId ${riderId} clusterId ${clusterId}: ${error.message}`);//th
+    }
+}
+
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -2089,4 +2152,7 @@ module.exports = {
     getClusterCentroids,
     setClusterCentroidName,
     setClusterCentroidColor,
+    upsertCluster,
+    deleteCluster,
 };
+
