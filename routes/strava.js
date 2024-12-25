@@ -6,6 +6,7 @@ const { getFirstSegmentEffortDate,
         updateStarredSegments,
         processRideSegments,
         processSegmentEfforts,
+        getActiveCentroid,
 } = require('../db/dbQueries');
 const { getStravaCredentials,
         getStravaTokens,
@@ -20,6 +21,7 @@ const { getStravaRecentRides,
         getStravaAthleteDetail,
         getStravaSegmentEffortsForRider,
 } = require('../db/stravaRideData');
+const { clusterRides } = require('../utility/clustering');
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
@@ -51,8 +53,8 @@ async function stravaRoutes(fastify, options) {
         setImmediate(async () => {
             // After successfully checking for new ride(s), check for segments and other details
             try{
-                for( let i = 0; i < recentRides.length; i++){
-                    const ride = recentRides[i];
+                for( let i = 0; i < ridesAdded.length; i++){
+                    const ride = ridesAdded[i];
                     // Retrieve recent ride details from Strava with segment and other information
                     const stravaRideDetail = await getStravaActivityById(tokens.accesstoken, ride.id);
                     await processRideSegments(fastify, riderId, stravaRideDetail, tokens);
@@ -64,10 +66,23 @@ async function stravaRoutes(fastify, options) {
 
             try {
                 // this updates ride metrics like intensity factor, TSS
-                const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
-                await fastify.pg.query(updaterideMetrics, [riderId]);
+                if(ridesAdded.length > 0){
+                    const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
+                    await fastify.pg.query(updaterideMetrics, [riderId]);
+                }
             } catch (updateError) {
                 console.error('Error updating ride metrics', updateError);
+            }
+
+            // This updates the default cluster for the riderId
+            try {
+                const activeClusterId = await getActiveCentroid(fastify,riderId);
+                if( activeClusterId === null) { return;}
+                await clusterRides(fastify, riderId, activeClusterId);
+                const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
+                await fastify.pg.query(updateClusterTags, [riderId, activeClusterId]);
+            } catch (error) {
+                console.error('Error clustering rides:', error);
             }
         });
     });

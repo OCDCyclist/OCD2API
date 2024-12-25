@@ -1845,7 +1845,7 @@ const getAllClusterDefinitions = async (fastify, riderId) =>{
 }
 
 const getActiveCentroid = async (fastify, riderId) =>{
-    // Returns the single record that defines the clustering to do for the requiest startYear and endYear.
+    // Returns the single record that defines the clustering to do for the requested riderId
     // It should return only one record if valid and zero records if invalid.
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -1870,10 +1870,10 @@ const getActiveCentroid = async (fastify, riderId) =>{
 
     try {
         const { rows } = await fastify.pg.query(query, params);
-        if(Array.isArray(rows)){
-            return rows;
+        if(Array.isArray(rows) && rows.length > 0){
+            return rows[0].clusterid;
         }
-        throw new Error(`Invalid data for getActiveCentroid for riderId ${riderId}`);//th
+        return null
 
     } catch (error) {
         throw new Error(`Database error fetching getActiveCentroid with riderId ${riderId}: ${error.message}`);//th
