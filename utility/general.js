@@ -57,4 +57,11 @@ const isValidRideArray = (data) => {
     );
 }
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray };
+/**
+ * Validate each value is a valid year (e.g., 4-digit number)
+ * @param {year} data - The year value to validate.
+ * @returns {boolean} - Returns true if the year is valid (4-digit number), otherwise false.
+ */
+const isValidYear = (year) => Number.isInteger(year) && year >= 1000 && year <= 9999;
+
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear };

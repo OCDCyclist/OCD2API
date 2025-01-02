@@ -704,43 +704,40 @@ const getRidesHistory = async (fastify, riderId, years) =>{
     }
 
     let query = `
-      SELECT
-        a.rideid,
-        a.date,
-        a.distance,
-        a.speedavg,
-        a.speedmax,
-        a.cadence,
-        a.hravg,
-        a.hrmax,
-        a.title,
-        a.poweravg,
-        a.powermax,
-        a.bikeid,
-        coalesce(b.bikename, 'no bike') as bikename,
-        coalesce(b.stravaname, 'no bike') as stravaname,
-        a.stravaid,
-        a.comment,
-        a.elevationgain,
-        a.elapsedtime,
-        a.powernormalized,
-        a.intensityfactor,
-        a.tss,
-        a.matches,
-        a.trainer,
-        a.elevationloss,
-        a.datenotime,
-        a.device_name,
-        a.fracdim
-      FROM
-        rides a left outer join bikes b
-        on a.bikeid = b.bikeid
-      WHERE
-        a.riderid = $1
-        AND EXTRACT(YEAR FROM a.date) = ANY($2)
-      ORDER BY
-        a.date ASC;
-      `;
+    SELECT
+      rideid,
+      date,
+      distance,
+      speedavg,
+      speedmax,
+      cadence,
+      hravg,
+      hrmax,
+      title,
+      poweravg,
+      powermax,
+      bikeid,
+      coalesce(bikename, 'no bike') as bikename,
+      coalesce(stravaname, 'no bike') as stravaname,
+      stravaid,
+      comment,
+      elevationgain,
+      elapsedtime,
+      powernormalized,
+      intensityfactor,
+      tss,
+      matches,
+      trainer,
+      elevationloss,
+      datenotime,
+      device_name,
+      fracdim,
+      tags,
+      calculated_weight_kg,
+      cluster
+    FROM
+      get_rides_by_years($1, $2);
+    `;
     const params = [riderId, years];
 
     try {
@@ -748,10 +745,10 @@ const getRidesHistory = async (fastify, riderId, years) =>{
         if(Array.isArray(rows)){
             return rows;
         }
-        throw new Error(`Invalid data for getRidesHistory for riderId ${riderId}`);//th
+        throw new Error(`Invalid data for get_rides_by_years for riderId ${riderId} years ${JSON.stringify(years)}`);//th
 
     } catch (error) {
-        throw new Error(`Database error fetching getRidesHistory with riderId ${riderId}: ${error.message}`);//th
+        throw new Error(`Database error fetching get_rides_by_years with riderId ${riderId} years ${JSON.stringify(years)}: ${error.message}`);//th
     }
 }
 
@@ -1146,6 +1143,72 @@ const getRideById = async (fastify, riderId, rideid) =>{
 
     } catch (error) {
         throw new Error(`Database error fetching getRideById with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getRidesSearch = async (fastify, riderId, filterParams) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!Array.isArray(filterParams)) {
+        return reply.status(400).send({ error: 'Invalid parameter: filterParams must be an array of values or nulls.' });
+    }
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster
+        FROM
+            get_rides_search(
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11, $12, $13,
+                $14, $15, $16, $17, $18
+            );
+        `;
+    const params = [riderId, ...filterParams];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_rides_search for riderId ${riderId} years ${JSON.stringify(years)}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching get_rides_search with riderId ${riderId} years ${JSON.stringify(years)}: ${error.message}`);//th
     }
 }
 
@@ -2106,7 +2169,6 @@ const deleteCluster = async (fastify, riderId, clusterId) =>{
     }
 }
 
-
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -2133,6 +2195,7 @@ module.exports = {
     getRidesByDOMMonth,
     getRidesforCluster,
     getRideById,
+    getRidesSearch,
     getLookback,
     updateRide,
     getSegmentEfforts,

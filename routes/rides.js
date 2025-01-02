@@ -9,9 +9,11 @@ const {
   getRidesByYearDOW,
   getRidesByDOMMonth,
   getRideById,
+  getRidesSearch,
   getLookback,
   updateRide,
 } = require('../db/dbQueries');
+const { isValidYear } = require('../utility/general');
 
 async function ridesRoutes(fastify, options) {
 
@@ -26,6 +28,41 @@ async function ridesRoutes(fastify, options) {
     try {
       const result = await getRidesLastMonth(fastify, riderId);
       request.log.warn(`rides retrieved: ${result.length}`);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ride/rides/years',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { years } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Validate that 'years' is a non-empty string
+    if (!years) {
+      return reply.status(400).send({ error: "Invalid or missing 'years' parameter" });
+    }
+
+   // Split the string into an array and parse each value into an integer
+   const yearsArray = years.split(',').map((year) => parseInt(year.trim(), 10));
+
+   if (!yearsArray.every(isValidYear)) {
+     return reply.status(400).send({ error: "All 'years' values must be valid 4-digit years" });
+   }
+
+    try {
+      const result = await getRidesHistory(fastify, id, yearsArray);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
@@ -416,6 +453,67 @@ async function ridesRoutes(fastify, options) {
       reply.status(500).send({ error: 'An error occurred while updating the ride' });
     }
   });
+
+  fastify.post('/ride/search',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Validate and extract input parameters
+    const {
+      startDate,
+      endDate,
+      minDistance,
+      maxDistance,
+      minSpeed,
+      maxSpeed,
+      minHrAvg,
+      maxHrAvg,
+      minElevation,
+      maxElevation,
+      minElapsedTime,
+      maxElapsedTime,
+      minPowerNormalized,
+      maxPowerNormalized,
+      minWeightKg,
+      maxWeightKg,
+      keyword,
+    } = request.body;
+
+    const filterParams = [
+      startDate || null,
+      endDate || null,
+      minDistance || null,
+      maxDistance || null,
+      minSpeed || null,
+      maxSpeed || null,
+      minHrAvg || null,
+      maxHrAvg || null,
+      minElevation || null,
+      maxElevation || null,
+      minElapsedTime || null,
+      maxElapsedTime || null,
+      minPowerNormalized || null,
+      maxPowerNormalized || null,
+      minWeightKg || null,
+      maxWeightKg || null,
+      keyword || null,
+    ];
+
+    try {
+      const result = await getRidesSearch(fastify, riderId, filterParams);
+
+      reply.status(200).send(result);
+
+    } catch (error) {
+      console.error('Error searching for rides:', error);
+      reply.status(500).send({ error: 'An error occurred while searching for rides' });
+    }
+  });
+
 }
 
 module.exports = ridesRoutes;
