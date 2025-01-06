@@ -10,6 +10,8 @@ const {
     allValuesDefined,
 } = require('../utility/strava');
 
+const { getSortedPropertyNames, writeActivityFile, getFilenameFromPath } = require('../utility/fileUtilities');
+
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -100,6 +102,7 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
                     riderid
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                RETURNING rideid
               `,  [
                     rideImperial.start_date_local,
                     rideImperial.distance,
@@ -121,6 +124,8 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
                     riderId
                   ]
               );
+              const newRideId = result.rows[0].rideid;
+              rideImperial.rideid = newRideId;
               ridesAdded.push(rideImperial);
         }
         catch(err){
@@ -312,6 +317,45 @@ const processRideSegments = async (fastify, riderId, stravaRideDetail, tokens) =
                 }
             }
         }
+    }
+}
+
+const processRideStreams = async (fastify, riderId, rideid, stravaId, data) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    const filename = await writeActivityFile(riderId, rideid, stravaId, data);
+    const streams = getSortedPropertyNames(data);
+
+    try{
+        await fastify.pg.query(`
+            INSERT INTO rides_streams (
+                rideid,
+                stravaid,
+                filename,
+                streams
+            )
+            VALUES ($1, $2, $3, $4)
+            `,  [
+                rideid,
+                stravaId,
+                getFilenameFromPath(filename),
+                streams
+                ]
+        );
+    }
+    catch(error){
+        console.error('Database error in processRideStreams inserting new ride stream information:', error);
+        throw new TypeError(`Database error in processRideStreams inserting new ride stream information: ${error}`);
     }
 }
 
@@ -1212,6 +1256,8 @@ const getRidesSearch = async (fastify, riderId, filterParams) =>{
     }
 }
 
+
+
 const getLookback = async (fastify, riderId ) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -1784,6 +1830,79 @@ const getRidesforCentroid = async (fastify, riderId, clusterId) =>{
     }
 }
 
+const getStravaIdForRideId = async (fastify, riderId, rideid) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        SELECT
+            stravaid
+        FROM
+            rides
+        WHERE
+            riderid = $1
+            and rideid = $2;
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows[0].stravaid;
+        }
+        throw new Error(`Invalid data for getStravaIdForRideId for riderId ${riderId} rideid ${rideid}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getStravaIdForRideId with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
+    }
+}
+
+const getRideIdForMostRecentMissingStreams = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            a.rideid
+        FROM
+            rides a left outer join rides_streams b
+            on a.rideid = b.rideid
+        WHERE
+            a.riderid = $1
+            and a.stravaid > 0
+            and b.rideid is null
+        ORDER BY
+            a.date desc
+        limit 20;
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRideIdForMostRecentMissingStreams for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideIdForMostRecentMissingStreams with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 const getDistinctClusterCentroids = async (fastify, riderId) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2177,6 +2296,7 @@ module.exports = {
     upsertStarredSegmentEffort,
     updateSegmentStats,
     processRideSegments,
+    processRideStreams,
     updateStarredSegments,
     processSegmentEfforts,
     upsertWeight,
@@ -2196,6 +2316,8 @@ module.exports = {
     getRidesforCluster,
     getRideById,
     getRidesSearch,
+    getStravaIdForRideId,
+    getRideIdForMostRecentMissingStreams,
     getLookback,
     updateRide,
     getSegmentEfforts,

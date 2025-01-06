@@ -69,6 +69,21 @@ async function getStravaActivityById(accessToken, stravaid) {
     return response.data;
 }
 
+async function getStravaActivityStreamsById(accessToken, stravaid) {
+    const url = `https://www.strava.com/api/v3/activities/${stravaid}/streams`;
+    // Define the streams you want to fetch (or use 'all' for all streams)
+    const params = {
+        keys: 'time,latlng,distance,altitude,velocity_smooth,heartrate,cadence,watts,temp,moving,heading',
+        key_by_type: true, // Groups streams by type
+    };
+
+    const response = await axios.get(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params
+    });
+    return response.data;
+}
+
 async function getStravaAthleteDetail(accessToken) {
     const url = `https://www.strava.com/api/v3/athlete`;
     const response = await axios.get(url, {
@@ -122,6 +137,7 @@ module.exports = {
     getStravaSegmentById,
     getStravaSegmenEffortsById,
     getStravaActivityById,
+    getStravaActivityStreamsById,
     getStravaAthleteDetail,
     getStravaSegmentEffortsForRider
 };

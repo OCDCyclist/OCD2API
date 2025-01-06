@@ -6,7 +6,10 @@ const { getFirstSegmentEffortDate,
         updateStarredSegments,
         processRideSegments,
         processSegmentEfforts,
+        processRideStreams,
         getActiveCentroid,
+        getStravaIdForRideId,
+        getRideIdForMostRecentMissingStreams,
 } = require('../db/dbQueries');
 const { getStravaCredentials,
         getStravaTokens,
@@ -18,6 +21,7 @@ const { getStravaRecentRides,
         getStravaStarredSegments,
         getStravaSegmentById,
         getStravaActivityById,
+        getStravaActivityStreamsById,
         getStravaAthleteDetail,
         getStravaSegmentEffortsForRider,
 } = require('../db/stravaRideData');
@@ -58,6 +62,18 @@ async function stravaRoutes(fastify, options) {
                     // Retrieve recent ride details from Strava with segment and other information
                     const stravaRideDetail = await getStravaActivityById(tokens.accesstoken, ride.id);
                     await processRideSegments(fastify, riderId, stravaRideDetail, tokens);
+                }
+            }
+            catch (databaseError) {
+                console.error('Error updating segment efforts', databaseError);
+            }
+
+            // Then retrieve the streams for the ride(s), write to file, and insert file name into database.
+            try{
+                for( let i = 0; i < ridesAdded.length; i++){
+                    const ride = ridesAdded[i];
+                    const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, ride.id);
+                    await processRideStreams(fastify, riderId, ride.rideid, stravaidNumber, stravaRideDetail);
                 }
             }
             catch (databaseError) {
@@ -207,6 +223,74 @@ async function stravaRoutes(fastify, options) {
 
         reply.send(stravaRideDetail);
     });
+
+    fastify.get('/rider/getActivityStreams/:rideid', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;  // request.user is populated after JWT verification
+        const { rideid } = request.params;
+
+        const id = parseInt(riderId, 10);
+        if (isNaN(id)) {
+          return reply.code(400).send({ error: 'Invalid or missing riderId' });
+        }
+
+        const rideIdValue = parseInt(rideid, 10);
+        if (isNaN(rideIdValue)) {
+          return reply.code(400).send({ error: 'Invalid or missing rideid' });
+        }
+
+        const stravaCredentials = await getStravaCredentials(fastify);
+        let tokens = await getStravaTokens(fastify, riderId);
+
+        if (isStravaTokenExpired(tokens)) {
+          tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+        }
+
+        let stravaidNumber = -1;
+        try{
+            stravaidNumber = await getStravaIdForRideId(fastify, riderId, rideIdValue);
+            const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaidNumber);
+            await processRideStreams(fastify, riderId, rideIdValue, stravaidNumber, stravaRideDetail);
+        }
+        catch (databaseError) {
+            console.error('Error updating segment efforts', databaseError);
+        }
+
+        reply.send({processed: true, rideid: rideIdValue, stravaId: stravaidNumber});
+    });
+
+    fastify.get('/rider/getActivityStreams/updateMissing', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;  // request.user is populated after JWT verification
+
+        const id = parseInt(riderId, 10);
+        if (isNaN(id)) {
+          return reply.code(400).send({ error: 'Invalid or missing riderId' });
+        }
+
+        const stravaCredentials = await getStravaCredentials(fastify);
+        let tokens = await getStravaTokens(fastify, riderId);
+
+        if (isStravaTokenExpired(tokens)) {
+          tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+        }
+
+        const proceessed = [];
+        try{
+            const rides = await getRideIdForMostRecentMissingStreams(fastify, id);
+            for(let i = 0; i < rides.length; i++){
+                const ride = rides[i];
+                const stravaidNumber = await getStravaIdForRideId(fastify, id, ride.rideid);
+                const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaidNumber);
+                await processRideStreams(fastify, id, ride.rideid, stravaidNumber, stravaRideDetail);
+                proceessed.push(ride.rideid);
+            }
+        }
+        catch (databaseError) {
+            console.error('Error updating segment efforts', databaseError);
+        }
+
+        reply.send({processed: true});
+    });
+
 
     fastify.get('/rider/getAthleteDetail', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;  // request.user is populated after JWT verification

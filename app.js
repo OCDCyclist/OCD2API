@@ -1,4 +1,6 @@
 const winston = require('winston');
+const {updateMissingStreams} = require('./processing/automatedChecks');
+const {logMessage} = require('./utility/general');
 
 const logger = winston.createLogger({
   level: 'info',
@@ -97,5 +99,35 @@ const start = async () => {
     process.exit(1);
   }
 };
+
+let taskInterval;
+const intervalInMinutes = 41;
+const intervalInMilliseconds = intervalInMinutes * 60 * 1000
+
+fastify.ready(() => {
+    console.log("Server is ready. Starting periodic task...");
+
+    taskInterval = setInterval(() => {
+        runPeriodicTask();
+    }, intervalInMilliseconds);
+});
+
+fastify.addHook('onClose', (instance, done) => {
+    if (taskInterval) {
+        clearInterval(taskInterval);
+        console.log("Periodic task stopped.");
+    }
+    done();
+});
+
+async function runPeriodicTask() {
+    try {
+        logMessage("Started running updateMissingStreams...");
+        await updateMissingStreams(fastify);
+        logMessage("Finished running updateMissingStreams...");
+    } catch (error) {
+        console.error("Error running updateMissingStreams:", error);
+    }
+}
 
 start();

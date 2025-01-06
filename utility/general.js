@@ -64,4 +64,12 @@ const isValidRideArray = (data) => {
  */
 const isValidYear = (year) => Number.isInteger(year) && year >= 1000 && year <= 9999;
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear };
+function logMessage(message) {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    console.log(`${message} at: ${hours}:${minutes}:${seconds}`);
+}
+
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear, logMessage };
