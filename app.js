@@ -1,6 +1,11 @@
 const winston = require('winston');
 const {updateMissingStreams} = require('./processing/automatedChecks');
 const {logMessage} = require('./utility/general');
+const { Worker } = require("worker_threads");
+const path = require("path");
+
+let worker;
+let shuttingDown = false;
 
 const logger = winston.createLogger({
   level: 'info',
@@ -30,7 +35,6 @@ const dbConnector = require('./db/db');
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
-
 
 // Register CORS plugin
 fastify.register(require('@fastify/cors'), {
@@ -86,12 +90,76 @@ fastify.post('/token', (request, reply) => {
   reply.send({ token });
 });
 
+// Start the worker thread
+function startWorker() {
+  worker = new Worker(path.resolve(__dirname, "worker//worker.js"), {
+    workerData: {
+      dbConfig: {
+        user: process.env.OCD_DB_USER,
+        host:  process.env.OCD_DB_HOST,
+        database: process.env.OCD_DB_NAME,
+        password: process.env.OCD_DB_PASSWORD,
+        port: process.env.OCD_DB_PORT,
+      },
+    },
+  });
+
+  worker.on("message", (msg) => {
+    console.log("Message from worker:", msg);
+  });
+
+  worker.on("error", (err) => {
+    console.error("Worker error:", err);
+  });
+
+  worker.on("exit", (code) => {
+    console.log(`Worker exited with code: ${code}`);
+    if (!shuttingDown) {
+      console.log("Restarting worker...");
+      startWorker(); // Restart worker if it exits unexpectedly
+    }
+  });
+
+  console.log("Worker started.");
+}
+
+// Graceful workder shutdown logic
+async function shutdownWorker() {
+  shuttingDown = true;
+
+  if (worker) {
+    console.log("Notifying worker to shut down...");
+    worker.postMessage({ type: "shutdown" }); // Notify worker to shut down
+
+    // Wait for the worker to exit, with a grace period
+    const shutdownTimeout = new Promise((resolve) =>
+      setTimeout(() => {
+        console.log("Grace period expired, terminating worker.");
+        worker.terminate().then(resolve);
+      }, 5000) // 5-second grace period
+    );
+
+    await Promise.race([
+      new Promise((resolve) =>
+        worker.once("exit", () => {
+          console.log("Worker exited gracefully.");
+          resolve();
+        })
+      ),
+      shutdownTimeout,
+    ]);
+  }
+
+  console.log("Worker shutdown complete.");
+}
+
 // Start server
 const start = async () => {
   try {
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
     console.log('Server is running on http://localhost:3000');
     logger.info('Server is running on http://localhost:3000');
+    startWorker();
   } catch (err) {
     const message = `Server is not running: ${JSON.stringify(err)}`;
     fastify.log.error(message);
@@ -101,12 +169,11 @@ const start = async () => {
 };
 
 let taskInterval;
-const intervalInMinutes = 41;
+const intervalInMinutes = 29;
 const intervalInMilliseconds = intervalInMinutes * 60 * 1000
 
 fastify.ready(() => {
     console.log("Server is ready. Starting periodic task...");
-
     taskInterval = setInterval(() => {
         runPeriodicTask();
     }, intervalInMilliseconds);
@@ -129,5 +196,18 @@ async function runPeriodicTask() {
         console.error("Error running updateMissingStreams:", error);
     }
 }
+
+// Handle process termination signals
+process.on("SIGINT", async () => {
+  console.log("SIGINT received. Shutting down...");
+  await shutdownWorker();
+  process.exit(0);
+});
+
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received. Shutting down...");
+  await shutdownWorker();
+  process.exit(0);
+});
 
 start();

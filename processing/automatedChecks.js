@@ -4,7 +4,7 @@ const { getStravaCredentials,
     isStravaTokenExpired,
     refreshStravaToken,
 } = require('../db/stravaAdmin');
-const { 
+const {
     processRideStreams,
     getStravaIdForRideId,
     getRideIdForMostRecentMissingStreams,
@@ -24,17 +24,25 @@ const updateMissingStreams = async (fastify) => {
       tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
     }
 
+    let rides = undefined
     try{
-        const rides = await getRideIdForMostRecentMissingStreams(fastify, riderId);
-        for(let i = 0; i < rides.length; i++){
-            const ride = rides[i];
+        rides = await getRideIdForMostRecentMissingStreams(fastify, riderId);
+    }
+    catch(error){
+        console.error('Unable to update streams', databaseError);
+        return;
+    }
+
+    for(let i = 0; i < rides.length; i++){
+        const ride = rides[i];
+        try{
             const stravaidNumber = await getStravaIdForRideId(fastify, riderId, ride.rideid);
             const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaidNumber);
             await processRideStreams(fastify, riderId, ride.rideid, stravaidNumber, stravaRideDetail);
         }
-    }
-    catch (databaseError) {
-        console.error('Error updating segment efforts', databaseError);
+        catch(error){
+            console.error(`Error updating streams for ride ${ride.rideid}`, databaseError);
+        }
     }
 };
 

@@ -73,7 +73,7 @@ async function stravaRoutes(fastify, options) {
                 for( let i = 0; i < ridesAdded.length; i++){
                     const ride = ridesAdded[i];
                     const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, ride.id);
-                    await processRideStreams(fastify, riderId, ride.rideid, stravaidNumber, stravaRideDetail);
+                    await processRideStreams(fastify, riderId, ride.rideid, ride.id, stravaRideDetail);
                 }
             }
             catch (databaseError) {
@@ -92,11 +92,13 @@ async function stravaRoutes(fastify, options) {
 
             // This updates the default cluster for the riderId
             try {
-                const activeClusterId = await getActiveCentroid(fastify,riderId);
-                if( activeClusterId === null) { return;}
-                await clusterRides(fastify, riderId, activeClusterId);
-                const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
-                await fastify.pg.query(updateClusterTags, [riderId, activeClusterId]);
+                if(ridesAdded.length > 0){
+                    const activeClusterId = await getActiveCentroid(fastify,riderId);
+                    if( activeClusterId === null) { return;}
+                    await clusterRides(fastify, riderId, activeClusterId);
+                    const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
+                    await fastify.pg.query(updateClusterTags, [riderId, activeClusterId]);
+                }
             } catch (error) {
                 console.error('Error clustering rides:', error);
             }
@@ -245,9 +247,8 @@ async function stravaRoutes(fastify, options) {
           tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
         }
 
-        let stravaidNumber = -1;
         try{
-            stravaidNumber = await getStravaIdForRideId(fastify, riderId, rideIdValue);
+            const stravaidNumber = await getStravaIdForRideId(fastify, riderId, rideIdValue);
             const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaidNumber);
             await processRideStreams(fastify, riderId, rideIdValue, stravaidNumber, stravaRideDetail);
         }
@@ -274,18 +275,26 @@ async function stravaRoutes(fastify, options) {
         }
 
         const proceessed = [];
+        let rides = undefined
         try{
-            const rides = await getRideIdForMostRecentMissingStreams(fastify, id);
-            for(let i = 0; i < rides.length; i++){
-                const ride = rides[i];
+           rides = await getRideIdForMostRecentMissingStreams(fastify, id);
+        }
+        catch(error){
+            console.error('Unable to update streams', databaseError);
+            reply.send({processed: false});
+        }
+
+        for(let i = 0; i < rides.length; i++){
+            const ride = rides[i];
+            try{
                 const stravaidNumber = await getStravaIdForRideId(fastify, id, ride.rideid);
                 const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaidNumber);
                 await processRideStreams(fastify, id, ride.rideid, stravaidNumber, stravaRideDetail);
                 proceessed.push(ride.rideid);
             }
-        }
-        catch (databaseError) {
-            console.error('Error updating segment efforts', databaseError);
+            catch(error){
+                console.error(`Error updating streams for ride ${ride.rideid}`, databaseError);
+            }
         }
 
         reply.send({processed: true});

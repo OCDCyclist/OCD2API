@@ -77,11 +77,17 @@ async function getStravaActivityStreamsById(accessToken, stravaid) {
         key_by_type: true, // Groups streams by type
     };
 
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params
-    });
-    return response.data;
+    try{
+        const response = await axios.get(url, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            params
+        });
+        return response.data;
+    }
+    catch(error){
+        console.log(`Error fetching activity streams: ${error.message}`);
+        return undefined;
+    }
 }
 
 async function getStravaAthleteDetail(accessToken) {

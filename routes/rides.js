@@ -3,7 +3,6 @@ const { DateTime } = require('luxon'); // Add Luxon for date parsing
 const {
   getRidesLastMonth,
   getRidesHistory,
-  getRides,
   getRidesByDate,
   getRidesByYearMonth,
   getRidesByYearDOW,
@@ -96,28 +95,6 @@ async function ridesRoutes(fastify, options) {
         return reply.code(200).send([]);
       }
 
-      return reply.code(200).send(result);
-    } catch (err) {
-      console.error('Database error:', err);
-      return reply.code(500).send({ error: 'Database error' });
-    }
-  });
-
-  fastify.get('/ride/rides',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
-      const { riderId } = request.user;  // request.user is populated after JWT verification
-      const { dateFrom, dateTo } = request.query;
-
-    const id = parseInt(riderId, 10);
-    if (isNaN(id)) {
-      return reply.code(400).send({ error: 'Invalid or missing riderId' });
-    }
-
-    try {
-      const result = await getRides(fastify, riderId, dateFrom, dateTo);
-
-      if (!Array.isArray(result)) {
-        return reply.code(200).send([]);
-      }
       return reply.code(200).send(result);
     } catch (err) {
       console.error('Database error:', err);

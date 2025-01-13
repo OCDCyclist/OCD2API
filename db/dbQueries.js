@@ -80,7 +80,7 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
         const rideImperial = convertToImperial(ride);
 
         try{
-            await fastify.pg.query(`
+            const result = await fastify.pg.query(`
                 INSERT INTO rides (
                     date,
                     distance,
@@ -124,9 +124,11 @@ const upsertRides = async (fastify, riderId, rides, defaultBikeId) => {
                     riderId
                   ]
               );
-              const newRideId = result.rows[0].rideid;
-              rideImperial.rideid = newRideId;
-              ridesAdded.push(rideImperial);
+              if(result && result.rows && result.rows.length > 0){
+                const newRideId = result.rows[0].rideid;
+                rideImperial.rideid = newRideId;
+                ridesAdded.push(rideImperial);
+              }
         }
         catch(err){
             console.error('Database error in refreshStravaToken:', err);
@@ -333,29 +335,54 @@ const processRideStreams = async (fastify, riderId, rideid, stravaId, data) => {
         throw new TypeError("Invalid parameter: rideid must be an integer");
     }
 
-    const filename = await writeActivityFile(riderId, rideid, stravaId, data);
-    const streams = getSortedPropertyNames(data);
-
-    try{
-        await fastify.pg.query(`
-            INSERT INTO rides_streams (
-                rideid,
-                stravaid,
-                filename,
-                streams
-            )
-            VALUES ($1, $2, $3, $4)
-            `,  [
-                rideid,
-                stravaId,
-                getFilenameFromPath(filename),
-                streams
-                ]
-        );
+    if(data){
+        const filename = await writeActivityFile(riderId, rideid, stravaId, data);
+        const streams = getSortedPropertyNames(data);
+        try{
+            await fastify.pg.query(`
+                INSERT INTO rides_streams (
+                    rideid,
+                    stravaid,
+                    filename,
+                    streams
+                )
+                VALUES ($1, $2, $3, $4)
+                `,  [
+                    rideid,
+                    stravaId,
+                    getFilenameFromPath(filename),
+                    streams
+                    ]
+            );
+        }
+        catch(error){
+            console.error('Database error in processRideStreams inserting new ride stream information:', error);
+            throw new TypeError(`Database error in processRideStreams inserting new ride stream information: ${error}`);
+        }
     }
-    catch(error){
-        console.error('Database error in processRideStreams inserting new ride stream information:', error);
-        throw new TypeError(`Database error in processRideStreams inserting new ride stream information: ${error}`);
+    else{
+        try{
+            await fastify.pg.query(`
+                INSERT INTO rides_streams (
+                    rideid,
+                    stravaid,
+                    filename,
+                    streams
+                )
+                VALUES ($1, $2, $3, $4)
+                `,  [
+                    rideid,
+                    stravaId,
+                    'unable to obtain streams',
+                    ''
+                    ]
+            );
+        }
+        catch(error){
+            console.error('Database error in processRideStreams inserting new ride stream information:', error);
+            throw new TypeError(`Database error in processRideStreams inserting new ride stream information: ${error}`);
+        }
+
     }
 }
 
@@ -686,39 +713,39 @@ const getRidesLastMonth = async (fastify, riderId) =>{
     }
 
     let query = `
-    SELECT
-      rideid,
-      date,
-      distance,
-      speedavg,
-      speedmax,
-      cadence,
-      hravg,
-      hrmax,
-      title,
-      poweravg,
-      powermax,
-      bikeid,
-      coalesce(bikename, 'no bike') as bikename,
-      coalesce(stravaname, 'no bike') as stravaname,
-      stravaid,
-      comment,
-      elevationgain,
-      elapsedtime,
-      powernormalized,
-      intensityfactor,
-      tss,
-      matches,
-      trainer,
-      elevationloss,
-      datenotime,
-      device_name,
-      fracdim,
-      tags,
-      calculated_weight_kg,
-      cluster
-    FROM
-      get_rides30days($1);
+        SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        coalesce(bikename, 'no bike') as bikename,
+        coalesce(stravaname, 'no bike') as stravaname,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim,
+        tags,
+        calculated_weight_kg,
+        cluster
+        FROM
+        get_rides30days($1);
     `;
     const params = [riderId];
 
@@ -793,75 +820,6 @@ const getRidesHistory = async (fastify, riderId, years) =>{
 
     } catch (error) {
         throw new Error(`Database error fetching get_rides_by_years with riderId ${riderId} years ${JSON.stringify(years)}: ${error.message}`);//th
-    }
-}
-
-const getRides = async (fastify, riderId, dateFrom, dateTo) =>{
-    if (!isFastify(fastify)) {
-        throw new TypeError("Invalid parameter: fastify must be provided");
-    }
-
-    if ( !isRiderId(riderId)) {
-        throw new TypeError("Invalid parameter: riderId must be an integer");
-    }
-
-    // Validate dateFrom and dateTo if they are present
-    let queryConditions = 'WHERE riderid = $1'; // Initialize base condition
-    const params = [riderId]; // Array to store query parameters (starting with riderId)
-
-    if (dateFrom && dayjs(dateFrom, 'YYYY-MM-DD', true).isValid()) {
-        queryConditions += ` AND date >= $2`; // Add condition for dateFrom
-        params.push(dateFrom);
-    }
-
-    if (dateTo && dayjs(dateTo, 'YYYY-MM-DD', true).isValid()) {
-        // Add one day to dateTo and subtract one second
-        const adjustedDateTo = dayjs(dateTo).add(1, 'day').subtract(1, 'second').format('YYYY-MM-DD HH:mm:ss');
-        queryConditions += ` AND date <= $${params.length + 1}`; // Add condition for dateTo
-        params.push(adjustedDateTo); // Add adjusted dateTo to the parameters
-    }
-
-    let query = `
-        SELECT
-        rideid,
-        date,
-        distance,
-        speedavg,
-        speedmax,
-        cadence,
-        hravg,
-        hrmax,
-        title,
-        poweravg,
-        powermax,
-        bikeid,
-        stravaid,
-        comment,
-        elevationgain,
-        elapsedtime,
-        powernormalized,
-        intensityfactor,
-        tss,
-        matches,
-        trainer,
-        elevationloss,
-        datenotime,
-        device_name,
-        fracdim
-        FROM
-            Rides ${queryConditions}
-        ORDER BY date DESC
-        `;
-
-    try {
-        const { rows } = await fastify.pg.query(query, params);
-        if(Array.isArray(rows)){
-            return rows;
-        }
-        throw new Error(`Invalid data for getRides for riderId ${riderId}`);//th
-
-    } catch (error) {
-        throw new Error(`Database error fetching getRides with riderId ${riderId}: ${error.message}`);//th
     }
 }
 
@@ -1141,42 +1099,40 @@ const getRideById = async (fastify, riderId, rideid) =>{
     const params = [riderId, rideid];
 
     let query = `
-      SELECT
-        a.rideid,
-        a.date,
-        a.distance,
-        a.speedavg,
-        a.speedmax,
-        a.cadence,
-        a.hravg,
-        a.hrmax,
-        a.title,
-        a.poweravg,
-        a.powermax,
-        a.bikeid,
-        coalesce(b.bikename, 'no bike') as bikename,
-        coalesce(b.stravaname, 'no bike') as stravaname,
-        a.stravaid,
-        a.comment,
-        a.elevationgain,
-        a.elapsedtime,
-        a.powernormalized,
-        a.intensityfactor,
-        a.tss,
-        a.matches,
-        a.trainer,
-        a.elevationloss,
-        a.datenotime,
-        a.device_name,
-        a.fracdim
-      FROM
-        rides a left outer join bikes b
-        on a.bikeid = b.bikeid
-      WHERE
-        a.riderid = $1
-        and a.rideid = $2
-        limit 1;
-      `;
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster
+        FROM
+            get_rides_by_rideid($1, $2);
+    `;
 
     try {
         const { rows } = await fastify.pg.query(query, params);
@@ -1188,6 +1144,45 @@ const getRideById = async (fastify, riderId, rideid) =>{
     } catch (error) {
         throw new Error(`Database error fetching getRideById with riderId ${riderId}: ${error.message}`);//th
     }
+}
+
+const getRideByIdQuery = () =>{
+    const query = `
+    SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        coalesce(bikename, 'no bike') as bikename,
+        coalesce(stravaname, 'no bike') as stravaname,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim,
+        tags,
+        calculated_weight_kg,
+        cluster
+    FROM
+        get_rides_by_rideid($1, $2);
+    `;
+    return query;
 }
 
 const getRidesSearch = async (fastify, riderId, filterParams) =>{
@@ -1255,8 +1250,6 @@ const getRidesSearch = async (fastify, riderId, filterParams) =>{
         throw new Error(`Database error fetching get_rides_search with riderId ${riderId} years ${JSON.stringify(years)}: ${error.message}`);//th
     }
 }
-
-
 
 const getLookback = async (fastify, riderId ) =>{
     if (!isFastify(fastify)) {
@@ -2308,13 +2301,13 @@ module.exports = {
     getDashboard,
     getRidesLastMonth,
     getRidesHistory,
-    getRides,
     getRidesByDate,
     getRidesByYearMonth,
     getRidesByYearDOW,
     getRidesByDOMMonth,
     getRidesforCluster,
     getRideById,
+    getRideByIdQuery,
     getRidesSearch,
     getStravaIdForRideId,
     getRideIdForMostRecentMissingStreams,
