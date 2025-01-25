@@ -714,38 +714,41 @@ const getRidesLastMonth = async (fastify, riderId) =>{
 
     let query = `
         SELECT
-        rideid,
-        date,
-        distance,
-        speedavg,
-        speedmax,
-        cadence,
-        hravg,
-        hrmax,
-        title,
-        poweravg,
-        powermax,
-        bikeid,
-        coalesce(bikename, 'no bike') as bikename,
-        coalesce(stravaname, 'no bike') as stravaname,
-        stravaid,
-        comment,
-        elevationgain,
-        elapsedtime,
-        powernormalized,
-        intensityfactor,
-        tss,
-        matches,
-        trainer,
-        elevationloss,
-        datenotime,
-        device_name,
-        fracdim,
-        tags,
-        calculated_weight_kg,
-        cluster
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
-        get_rides30days($1);
+            get_rides30days($1);
     `;
     const params = [riderId];
 
@@ -1263,24 +1266,43 @@ const getLookback = async (fastify, riderId ) =>{
     const params = [riderId]; // Array to store query parameters (starting with riderId)
 
     let query = `
-      Select
-        rideid,
-        category,
-        date,
-        distance,
-        speedavg,
-        elapsedtime,
-        elevationgain,
-        hravg,
-        poweravg
-        bikeid,
-        stravaid,
-        title,
-        comment
-      From
-        get_rider_lookback_this_day($1)
-      Order By date asc;
-      `;
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            category
+        FROM
+            get_rides_lookback_this_day($1)
+        ORDER BY
+            date asc;
+    `;
 
     try {
         const { rows } = await fastify.pg.query(query, params);
@@ -1603,6 +1625,15 @@ const updateClusterCentroids = async (fastify, riderId, clusterid, centroids) =>
     } catch (error) {
         throw new Error(`Database error updating centroids for clusters ${riderId}: ${error.message}`);//th
     }
+    try{
+        // this updates cluster names assuming Hilly for most elevation, race for most power, easy for lowest hr and temp for what is left.
+        const updateClusterNames = 'CALL update_cluster_names($1)';
+        await fastify.pg.query(updateClusterNames, [riderId]);
+    }
+    catch(error){
+        throw new Error(`Database error updating centroids names and colors for riderId ${riderId}: ${error.message}`);//th
+    }
+
     return count > 0;
 }
 

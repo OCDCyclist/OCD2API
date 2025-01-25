@@ -169,32 +169,29 @@ const start = async () => {
 };
 
 let taskInterval;
-const intervalInMinutes = 29;
+const intervalInMinutes = 21;
 const intervalInMilliseconds = intervalInMinutes * 60 * 1000
 
 fastify.ready(() => {
-    console.log("Server is ready. Starting periodic task...");
-    taskInterval = setInterval(() => {
-        runPeriodicTask();
-    }, intervalInMilliseconds);
+  taskInterval = setInterval(() => {
+    runPeriodicTask();
+  }, intervalInMilliseconds);
 });
 
 fastify.addHook('onClose', (instance, done) => {
-    if (taskInterval) {
-        clearInterval(taskInterval);
-        console.log("Periodic task stopped.");
-    }
-    done();
+  if (taskInterval) {
+    clearInterval(taskInterval);
+    console.log("Periodic task stopped.");
+  }
+  done();
 });
 
 async function runPeriodicTask() {
-    try {
-        logMessage("Started running updateMissingStreams...");
-        await updateMissingStreams(fastify);
-        logMessage("Finished running updateMissingStreams...");
-    } catch (error) {
-        console.error("Error running updateMissingStreams:", error);
-    }
+  try {
+    await updateMissingStreams(fastify);
+  } catch (error) {
+    console.error("Error running updateMissingStreams:", error);
+  }
 }
 
 // Handle process termination signals
