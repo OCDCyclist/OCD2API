@@ -205,9 +205,9 @@ async function watchForFiles() {
             ];
 
             const combinedZones = [
+              (data.heartrate ? calculateZones(data.heartrate.data, riderZoneObject.HR) : []),
               (data.watts ? calculateZones(data.watts.data, riderZoneObject.Power) : []),
               (data.cadence ? calculateZones(data.cadence.data, riderZoneObject.Cadence) : []),
-              (data.heartrate ? calculateZones(data.heartrate.data, riderZoneObject.HR) : []),
             ];
 
             await insertMetrics(rideId, combinedMetrics);

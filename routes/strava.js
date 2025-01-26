@@ -354,6 +354,7 @@ async function stravaRoutes(fastify, options) {
                 expiresAt: expires_at
             });
         } catch (error) {
+            fastify.log.error('Failed to retrieve access token.');
             fastify.log.error(error);
             reply.code(500).send({ error: 'Failed to retrieve access token.' });
         }
@@ -384,6 +385,7 @@ async function stravaRoutes(fastify, options) {
                 expiresAt: expires_at
             });
         } catch (error) {
+            fastify.log.error('Failed to refresh access token.');
             fastify.log.error(error);
             reply.code(500).send({ error: 'Failed to refresh access token.' });
         }

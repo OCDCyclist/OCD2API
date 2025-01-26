@@ -56,6 +56,7 @@ fastify.register(require('@fastify/cors'), {
 
 // Register JWT plugin
 const { fastifyJwt } = require('@fastify/jwt');
+const { log } = require('console');
 fastify.register(fastifyJwt, {
   secret: process.env.JWT_SECRET
 });
@@ -181,6 +182,7 @@ fastify.ready(() => {
 fastify.addHook('onClose', (instance, done) => {
   if (taskInterval) {
     clearInterval(taskInterval);
+    logger.info('Periodic task stopped.');
     console.log("Periodic task stopped.");
   }
   done();
@@ -190,18 +192,21 @@ async function runPeriodicTask() {
   try {
     await updateMissingStreams(fastify);
   } catch (error) {
+    logger.info(`Error running updateMissingStreams: ${error.message}`);
     console.error("Error running updateMissingStreams:", error);
   }
 }
 
 // Handle process termination signals
 process.on("SIGINT", async () => {
+  logger.info("SIGINT received. Shutting down...");
   console.log("SIGINT received. Shutting down...");
   await shutdownWorker();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
+  logger.info("SIGTERM received. Shutting down...");
   console.log("SIGTERM received. Shutting down...");
   await shutdownWorker();
   process.exit(0);

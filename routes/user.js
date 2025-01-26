@@ -246,6 +246,35 @@ async function userRoutes(fastify, options) {
     }
 
   });
+
+  fastify.get('/user/zones',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    let query = `Select zonetype, zonevalues from riderzones where riderid = $1;`
+    const params = [id];
+
+    try {
+      const { rows } = await fastify.pg.query(query, params);
+
+      // If no zones are found, return an empty array
+      if (rows.length === 0) {
+        return reply.code(200).send([]);
+      }
+
+      // Send the filtered rides
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error retrieving zones:', err);
+      return reply.code(500).send({ error: 'Database error retrieving zones' });
+    }
+  });
+
 }
 
 module.exports = userRoutes;
