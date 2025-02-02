@@ -11,6 +11,8 @@ const {
   getRidesSearch,
   getLookback,
   updateRide,
+  getRideMetricsById,
+  getRideMatchesById,
 } = require('../db/dbQueries');
 const { isValidYear } = require('../utility/general');
 
@@ -264,6 +266,54 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ride/metrics/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRideMetricsById(fastify, riderId, rideidValid);
+      return reply.code(200).send(result);
+
+    } catch (err) {
+      console.error('Database error retrieving ride metrics:', err);
+      return reply.code(500).send({ error: 'Database error retrieving ride metrics' });
+    }
+  });
+
+  fastify.get('/ride/matches/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRideMatchesById(fastify, riderId, rideidValid);
+      return reply.code(200).send(result);
+
+    } catch (err) {
+      console.error('Database error retrieving ride getRideMatchesById:', err);
+      return reply.code(500).send({ error: 'Database error retrieving ride getRideMatchesById' });
     }
   });
 

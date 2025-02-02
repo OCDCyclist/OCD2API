@@ -252,4 +252,6 @@ module.exports = {
   calculateTemperatureMetrics,
   calculateSpeedMetrics,
   calculateAltitudeMetrics,
+  nSecondAverageMax,
+  RollingAverageType
 };

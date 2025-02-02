@@ -808,7 +808,10 @@ const getRidesHistory = async (fastify, riderId, years) =>{
       fracdim,
       tags,
       calculated_weight_kg,
-      cluster
+      cluster,
+      hrzones,
+      powerzones,
+      cadencezones
     FROM
       get_rides_by_years($1, $2);
     `;
@@ -875,7 +878,10 @@ const getRidesByDate = async (fastify, riderId, date) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_by_date($1, $2)
         `;
@@ -942,7 +948,10 @@ const getRidesByYearMonth = async (fastify, riderId, year, month) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_by_year_month($1, $2, $3)
         `;
@@ -1008,7 +1017,10 @@ const getRidesByYearDOW = async (fastify, riderId, year, dow) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_by_year_dow($1, $2, $3)
         `;
@@ -1074,7 +1086,10 @@ const getRidesByDOMMonth = async (fastify, riderId, dom, month) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_by_dom_month($1, $2, $3)
         `;
@@ -1132,7 +1147,10 @@ const getRideById = async (fastify, riderId, rideid) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_by_rideid($1, $2);
     `;
@@ -1181,7 +1199,10 @@ const getRideByIdQuery = () =>{
         fracdim,
         tags,
         calculated_weight_kg,
-        cluster
+        cluster,
+        hrzones,
+        powerzones,
+        cadencezones
     FROM
         get_rides_by_rideid($1, $2);
     `;
@@ -1232,7 +1253,10 @@ const getRidesSearch = async (fastify, riderId, filterParams) =>{
             fracdim,
             tags,
             calculated_weight_kg,
-            cluster
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_search(
                 $1, $2, $3, $4, $5, $6, $7,
@@ -1297,7 +1321,10 @@ const getLookback = async (fastify, riderId ) =>{
             tags,
             calculated_weight_kg,
             cluster,
-            category
+            category,
+            hrzones,
+            powerzones,
+            cadencezones
         FROM
             get_rides_lookback_this_day($1)
         ORDER BY
@@ -1772,7 +1799,10 @@ const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster)
       fracdim,
       tags,
       calculated_weight_kg,
-      cluster
+      cluster,
+      hrzones,
+      powerzones,
+      cadencezones
     FROM
       get_rides_for_cluster($1, $2, $3, $4);
     `;
@@ -2312,6 +2342,85 @@ const deleteCluster = async (fastify, riderId, clusterId) =>{
     }
 }
 
+const getRideMetricsById = async (fastify, riderId, rideid) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        SELECT
+            metric,
+            period,
+            metric_value,
+            starttime
+        FROM
+            get_ride_metric_detail($1,$2)
+        ORDER BY
+            metric;
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRideMetrricsById for riderId ${riderId} rideid ${rideid}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideMetrricsById with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
+    }
+}
+
+const getRideMatchesById = async (fastify, riderId, rideid) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        SELECT
+            type,
+            period,
+            targetpower,
+            actualperiod,
+            maxaveragepower,
+            averagepower,
+            peakpower,
+            averageheartrate,
+            starttime
+        FROM
+            get_ride_matches($1, $2);
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRideMatchesById for riderId ${riderId} rideid ${rideid}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideMatchesById with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -2363,5 +2472,7 @@ module.exports = {
     setClusterCentroidColor,
     upsertCluster,
     deleteCluster,
+    getRideMetricsById,
+    getRideMatchesById,
 };
 
