@@ -13,8 +13,9 @@ const {
   updateRide,
   getRideMetricsById,
   getRideMatchesById,
+  getRidesByDateRange,
 } = require('../db/dbQueries');
-const { isValidYear } = require('../utility/general');
+const { isValidYear, isValidDate } = require('../utility/general');
 
 async function ridesRoutes(fastify, options) {
 
@@ -227,6 +228,37 @@ async function ridesRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error' });
     }
   });
+
+  fastify.get('/ride/getRidesByDateRange',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { startDate, endDate } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    if (!isValidDate(startDate)) {
+      return reply.code(400).send({ error: 'Invalid or missing startDate' });
+    }
+
+    if (!isValidDate(endDate)) {
+      return reply.code(400).send({ error: 'Invalid or missing endDate' });
+    }
+
+    try {
+      const result = await getRidesByDateRange(fastify, id, startDate, endDate);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
 
   fastify.get('/ride/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification

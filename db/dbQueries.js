@@ -1105,6 +1105,75 @@ const getRidesByDOMMonth = async (fastify, riderId, dom, month) =>{
     }
 }
 
+const getRidesByDateRange = async (fastify, riderId, startDate, endDate) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isValidDate(startDate) ) {
+        throw new TypeError("Invalid parameter: startDate must be a valid date");
+    }
+
+    if ( !isValidDate(endDate) ) {
+        throw new TypeError("Invalid parameter: endDate must be a valid date");
+    }
+
+    const params = [riderId, startDate, endDate];
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
+        FROM
+            get_rides_by_date_range($1, $2, $3)
+        `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Database error fetching getRidesByDateRange with riderId ${riderId} startDate ${startDate} endDate ${endDate}: ${error.message}`);//th
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesByDateRange with riderId ${riderId} startDate ${startDate} endDate ${endDate}: ${error.message}`);//th
+    }
+}
+
 const getRideById = async (fastify, riderId, rideid) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2421,6 +2490,70 @@ const getRideMatchesById = async (fastify, riderId, rideid) => {
     }
 }
 
+const getStreaks_1_day = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            start_date,
+            end_date,
+            streak_length
+        FROM
+            get_rider_streaks_1_day($1);
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getStreaks_1_day for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getStreaks_1_day with riderId ${riderId}: ${error.message}`);
+    }
+}
+
+const getStreaks_7days200 = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            start_date,
+            end_date,
+            streak_length
+        FROM
+            get_rider_streaks_7_day($1);
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getStreaks_1_day for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getStreaks_1_day with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -2445,6 +2578,7 @@ module.exports = {
     getRidesByYearMonth,
     getRidesByYearDOW,
     getRidesByDOMMonth,
+    getRidesByDateRange,
     getRidesforCluster,
     getRideById,
     getRideByIdQuery,
@@ -2474,5 +2608,7 @@ module.exports = {
     deleteCluster,
     getRideMetricsById,
     getRideMatchesById,
+    getStreaks_1_day,
+    getStreaks_7days200,
 };
 

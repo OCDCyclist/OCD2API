@@ -3,6 +3,8 @@ const {
   getYearAndMonth,
   getYearAndDOW,
   getMonthAndDOM,
+  getStreaks_1_day,
+  getStreaks_7days200,
 } = require('../db/dbQueries');
 
 async function ocdRoutes(fastify, options) {
@@ -91,11 +93,54 @@ async function ocdRoutes(fastify, options) {
 
       return reply.code(200).send(result);
   } catch (err) {
-      console.error('Database error:', err);
-      return reply.code(500).send({ error: 'Database error' });
+      console.error('Database error monthanddom:', err);
+      return reply.code(500).send({ error: 'Database error monthanddom' });
     }
   });
 
+  fastify.get('/ocds/streaks/1',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getStreaks_1_day(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error streaks 1 day:', err);
+      return reply.code(500).send({ error: 'Database error streaks 1 day' });
+    }
+  });
+
+  fastify.get('/ocds/streaks/7days200',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getStreaks_7days200(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error streaks 7days200:', err);
+      return reply.code(500).send({ error: 'Database error streaks 7days200' });
+    }
+  });
 }
 
 module.exports = ocdRoutes;
