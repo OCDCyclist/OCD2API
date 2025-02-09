@@ -1,5 +1,5 @@
 const {
-  getCummulatives,
+  getCummulativesByYear,
   getYearAndMonth,
   getYearAndDOW,
   getMonthAndDOM,
@@ -11,26 +11,27 @@ async function ocdRoutes(fastify, options) {
   // Define the dashboard route
   fastify.get('/ocds/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
+    const years = request.query.years ? request.query.years.split(',').map(Number) : [];
 
-   const id = parseInt(riderId, 10);
-   if (isNaN(id)) {
-     return reply.code(400).send({ error: 'Invalid or missing riderId' });
-   }
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
 
-   try {
-    const result = await getCummulatives(fastify, riderId);
+    try {
+      const result = await getCummulativesByYear(fastify, riderId, years);
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
 
-     if (!Array.isArray(result)) {
-       return reply.code(200).send([]);
-     }
+      return reply.code(200).send(result);
 
-     return reply.code(200).send(result);
-
-   } catch (err) {
-     console.error('Database error:', err);
-     return reply.code(500).send({ error: 'Database error' });
-   }
-  });
+      } catch (err) {
+        console.error('Database error cummulatives:', err);
+        return reply.code(500).send({ error: 'Database error cummulatives' });
+      }
+    }
+  );
 
   fastify.get('/ocds/yearandmonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification

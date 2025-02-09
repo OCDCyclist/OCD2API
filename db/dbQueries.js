@@ -605,6 +605,39 @@ const getCummulatives = async (fastify, riderId) =>{
     }
 }
 
+const getCummulativesByYear = async (fastify, riderId, years) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if (!isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!Array.isArray(years)) {
+        throw new TypeError("Invalid parameter: years values must be an array");
+    }
+
+    if(years.length > 0 && !years.every(Number.isInteger)){
+        throw new TypeError("Invalid parameter: years values must be integers");
+    }
+
+    let query = `SELECT * FROM public.get_rider_cummulatives($1, $2)`;
+    const params = [riderId, years];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getCummulativesByYear for riderId ${riderId} years: ${JSON.stringify(years)}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getCummulativesByYear with riderId ${riderId} years: ${JSON.stringify(years)}: ${error.message}`);//th
+    }
+}
+
 const getYearAndMonth = async (fastify, riderId) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2568,6 +2601,7 @@ module.exports = {
     upsertWeight,
     getWeightTrackerData,
     getCummulatives,
+    getCummulativesByYear,
     getYearAndMonth,
     getYearAndDOW,
     getMonthAndDOM,

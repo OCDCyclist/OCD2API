@@ -55,7 +55,9 @@ async function stravaRoutes(fastify, options) {
         });
 
         setImmediate(async () => {
-            // After successfully checking for new ride(s), check for segments and other details
+            // After successfully checking for new ride(s), check for
+            // 
+            //  segments and other details
             try{
                 for( let i = 0; i < ridesAdded.length; i++){
                     const ride = ridesAdded[i];
