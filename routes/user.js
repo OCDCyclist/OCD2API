@@ -1,6 +1,6 @@
 const { DateTime } = require('luxon'); // Add Luxon for date parsing
 const { getTags, addTag, removeTag, assignTags} = require('../db/dbTagQueries');
- const { upsertWeight, getWeightTrackerData } = require('../db/dbQueries');
+ const { upsertWeight, getWeightTrackerData, getWeightPeriodData } = require('../db/dbQueries');
 const {isRiderId, isLocationId, isAssignmentId, isValidTagArray} = require('../utility/general')
 
 async function userRoutes(fastify, options) {
@@ -89,6 +89,27 @@ async function userRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/weight/:period',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { period } = request.params;
+
+    const rideridtouse = parseInt(riderId, 10);
+    if (isNaN(rideridtouse)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const periodToUse =  (typeof(period) === 'string') ?  period.toLowerCase().trim() :'month';
+
+    try {
+      const rows = await getWeightPeriodData(fastify, rideridtouse, periodToUse);
+      return reply.code(200).send(rows);
+
+    } catch (err) {
+      console.error('Database error getWeightPeriodData:', err);
+      return reply.code(500).send({ error: 'Database error getWeightPeriodData' });
     }
   });
 

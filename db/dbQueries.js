@@ -580,6 +580,49 @@ const getWeightTrackerData = async (fastify, riderId) =>{
     }
 }
 
+const getWeightPeriodData = async (fastify, riderId, period) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let periodToUse = typeof(period) === 'string' ? period.toLowerCase().trim() : 'month';
+
+    let query = `
+        SELECT
+            date,
+            weight,
+            weight7,
+            weight30,
+            weight365,
+            bodyfatfraction,
+            bodyfatfraction7
+            bodyfatfraction30,
+            bodyfatfraction365,
+            bodyh2ofraction,
+            bodyh2ofraction7,
+            bodyh2ofraction30,
+            bodyh2ofraction365
+        FROM
+            get_riderweight_by_daterange($1,$2);
+    `;
+    const params = [riderId, periodToUse];
+
+    try {
+        // This will automatically release the one-time-use connection.
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getWeightPeriodData for riderId ${riderId} period: ${periodToUse}`);//th
+    } catch (err) {
+        throw new Error(`Database error fetching getWeightPeriodData with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+
 const getCummulatives = async (fastify, riderId) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2587,6 +2630,41 @@ const getStreaks_7days200 = async (fastify, riderId) =>{
     }
 }
 
+const getReferencePowerLevels = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            level,
+            rank,
+            sec0005,
+            sec0060,
+            sec0300,
+            sec1200
+        FROM
+            get_rider_reference_powerlevels($1);
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getReferencePowerLevels for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getReferencePowerLevels with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -2600,6 +2678,7 @@ module.exports = {
     processSegmentEfforts,
     upsertWeight,
     getWeightTrackerData,
+    getWeightPeriodData,
     getCummulatives,
     getCummulativesByYear,
     getYearAndMonth,
@@ -2644,5 +2723,6 @@ module.exports = {
     getRideMatchesById,
     getStreaks_1_day,
     getStreaks_7days200,
+    getReferencePowerLevels,
 };
 

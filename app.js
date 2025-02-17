@@ -80,6 +80,7 @@ fastify.register(require('./routes/dashboard'));
 fastify.register(require('./routes/ocds'));
 fastify.register(require('./routes/riders'));
 fastify.register(require('./routes/rides'));
+fastify.register(require('./routes/reference'));
 fastify.register(require('./routes/segments'));
 fastify.register(require('./routes/strava'));
 fastify.register(require('./routes/user'));

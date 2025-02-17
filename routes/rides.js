@@ -259,7 +259,6 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
-
   fastify.get('/ride/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
     const { rideid } = request.params;
