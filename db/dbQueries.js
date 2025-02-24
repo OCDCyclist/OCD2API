@@ -1312,6 +1312,56 @@ const getRideById = async (fastify, riderId, rideid) =>{
     }
 }
 
+const getSegmentEffortsByRideID = async (fastify, riderId, rideid) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    const params = [riderId, rideid];
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            stravaid,
+            effortid,
+            elapsed_time,
+            moving_time,
+            distance,
+            starttime,
+            endtime,
+            average_cadence,
+            average_watts,
+            average_heartrate,
+            max_heartrate,
+            name,
+            climb_category,
+            effort_count,
+            rank
+        FROM
+            get_ride_segment_efforts($1, $2);
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows) && rows.length >= 0){
+            return rows;
+        }
+        return {};
+
+    } catch (error) {
+        throw new Error(`Database error fetching getSegmentEffortsByRideID with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
+    }
+}
+
 const getRideByIdQuery = () =>{
     const query = `
     SELECT
@@ -2694,6 +2744,7 @@ module.exports = {
     getRidesByDateRange,
     getRidesforCluster,
     getRideById,
+    getSegmentEffortsByRideID,
     getRideByIdQuery,
     getRidesSearch,
     getStravaIdForRideId,

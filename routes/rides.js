@@ -8,6 +8,7 @@ const {
   getRidesByYearDOW,
   getRidesByDOMMonth,
   getRideById,
+  getSegmentEffortsByRideID,
   getRidesSearch,
   getLookback,
   updateRide,
@@ -275,6 +276,30 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ride/segments/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidToUse = parseInt(rideid, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getSegmentEffortsByRideID(fastify, id, rideidToUse);
+      return reply.code(200).send(result);
+
+    } catch (err) {
+      console.error('Database error getSegmentEffortsByRideID:', err);
+      return reply.code(500).send({ error: 'Database error getSegmentEffortsByRideID' });
     }
   });
 
