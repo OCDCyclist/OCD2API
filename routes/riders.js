@@ -134,7 +134,7 @@ async function ridersRoutes(fastify, options) {
       // Generate JWT token with 24-hour expiration
       const token = fastify.jwt.sign(
         { riderId: user.riderid, username: user.username },
-        { expiresIn: '24h' } // Set the token to expire in 24 hours
+        { expiresIn: '72h' } // Set the token to expire in 72 hours
       );
 
       reply.send({ message: 'Login successful', token });

@@ -57,6 +57,37 @@ const insertMetrics = async (rideid, metrics) => {
   }
 };
 
+const storeRideMetrics = async (rideId, metrics) => {
+  const compress = (arr, type) => zlib.deflateSync(Buffer.from(new type(arr).buffer));
+
+  const compressedData = {
+      power: compress(metrics.power, Uint16Array),
+      heart_rate: compress(metrics.heart_rate, Uint16Array),
+      cadence: compress(metrics.cadence, Uint16Array),
+      speed: compress(metrics.speed, Float32Array),
+      altitude: compress(metrics.altitude, Float32Array),
+      temperature: compress(metrics.temperature, Float32Array),
+      location: compress(metrics.location.flat(), Float32Array)
+  };
+
+  await pool.query(
+      `INSERT INTO ride_metrics (riderid, rideid, power, heart_rate, cadence, speed, altitude, temperature, location, duration) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (rideid) DO UPDATE SET 
+           power = EXCLUDED.power, 
+           heart_rate = EXCLUDED.heart_rate,
+           cadence = EXCLUDED.cadence,
+           speed = EXCLUDED.speed,
+           altitude = EXCLUDED.altitude,
+           temperature = EXCLUDED.temperature,
+           location = EXCLUDED.location,
+           duration = EXCLUDED.duration`,
+      [1, rideId, ...Object.values(compressedData), metrics.duration]
+  );
+
+  console.log(`Stored ride metrics for ride ${rideId}`);
+}
+
 const updateNormalizedPowerMetric = async (riderId, rideid) => {
   const client = await pool.connect();
   try {
@@ -279,7 +310,7 @@ async function watchForFiles() {
 
             // Parse the JSON data
             const data = JSON.parse(jsonData);
-
+/*
             const combinedMetrics = [
               ...(data.watts ? calculatePowerMetrics(data.watts.data) : []),
               ...(data.cadence ? calculateCadenceMetrics(data.cadence.data) : []),
@@ -307,6 +338,7 @@ async function watchForFiles() {
             await allMatches.forEach(async (match) => {
               await upsertRideMatch(Number(rideId), match.type, match.period, match.targetFTP, match.startIndex, match.actualperiod, match.maxaveragepower, match.averagepower, match.peakpower, match.averageheartrate);
             })
+  */
 
             console.log(`Finished processing: ${file}.`);
 
