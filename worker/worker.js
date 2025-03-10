@@ -3,7 +3,8 @@ const fs = require("fs/promises");
 const path = require("path");
 const { workerData } = require('worker_threads');
 const { Pool } = require('pg');
-const { isRiderId } = require("../utility/general");
+const zlib = require("zlib");
+const { isRiderId, isIntegerValue } = require("../utility/general");
 const {
   calculatePowerMetrics,
   calculateCadenceMetrics,
@@ -16,6 +17,7 @@ const {
   calculateZones,
 } = require("../processing/calculateZones");
 const {calculateMatches} = require("../processing/calculateMatches");
+const { nSecondAverageMax, RollingAverageType } = require("../utility/metrics");
 
 // Navigate relative to the worker.js file's directory (__dirname)
 const inputDir = path.resolve(__dirname, "../data/activities/input");
@@ -57,35 +59,46 @@ const insertMetrics = async (rideid, metrics) => {
   }
 };
 
+const compress = (data, type) => {
+  const originalData = new type(data);
+  const compressedData = zlib.deflateSync(Buffer.from(originalData.buffer));
+  return compressedData;
+};
+
 const storeRideMetrics = async (rideId, metrics) => {
-  const compress = (arr, type) => zlib.deflateSync(Buffer.from(new type(arr).buffer));
+  const client = await pool.connect();
 
   const compressedData = {
-      power: compress(metrics.power, Uint16Array),
-      heart_rate: compress(metrics.heart_rate, Uint16Array),
-      cadence: compress(metrics.cadence, Uint16Array),
-      speed: compress(metrics.speed, Float32Array),
-      altitude: compress(metrics.altitude, Float32Array),
-      temperature: compress(metrics.temperature, Float32Array),
-      location: compress(metrics.location.flat(), Float32Array)
+      watts: metrics.watts ? compress(metrics.watts.data, Uint16Array) : compress([], Uint16Array),
+      heartrate: metrics.heartrate ? compress(metrics.heartrate.data, Uint16Array) : compress([], Uint16Array),
+      cadence: metrics.cadence ? compress(metrics.cadence.data, Uint16Array) : compress([], Uint16Array),
+      velocity_smooth: metrics.velocity_smooth ? compress(metrics.velocity_smooth.data, Float32Array) : compress([], Float32Array),
+      altitude: metrics.altitude ? compress(metrics.altitude.data, Uint16Array) : compress([], Uint16Array),
+      distance: metrics.distance ? compress(metrics.distance.data, Float32Array) : compress([], Float32Array),
+      temperature: metrics.temp ? compress(metrics.temp.data, Uint16Array) : compress([], Uint16Array),
+      location: metrics.latlng ? compress(metrics.latlng.data.flat(), Float32Array) : compress([], Float32Array)
   };
 
-  await pool.query(
-      `INSERT INTO ride_metrics (riderid, rideid, power, heart_rate, cadence, speed, altitude, temperature, location, duration) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (rideid) DO UPDATE SET 
-           power = EXCLUDED.power, 
-           heart_rate = EXCLUDED.heart_rate,
-           cadence = EXCLUDED.cadence,
-           speed = EXCLUDED.speed,
-           altitude = EXCLUDED.altitude,
-           temperature = EXCLUDED.temperature,
-           location = EXCLUDED.location,
-           duration = EXCLUDED.duration`,
-      [1, rideId, ...Object.values(compressedData), metrics.duration]
-  );
-
-  console.log(`Stored ride metrics for ride ${rideId}`);
+  try {
+      await client.query(`
+        INSERT INTO ride_metrics_binary (rideid, watts, heartrate, cadence, velocity_smooth, altitude, distance, temperature, location)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (rideid) DO UPDATE SET
+            watts = EXCLUDED.watts,
+            heartrate = EXCLUDED.heartrate,
+            cadence = EXCLUDED.cadence,
+            velocity_smooth = EXCLUDED.velocity_smooth,
+            altitude = EXCLUDED.altitude,
+            distance = EXCLUDED.distance,
+            temperature = EXCLUDED.temperature,
+            location = EXCLUDED.location`,
+            [rideId, ...Object.values(compressedData)]
+      );
+  } catch (err) {
+    console.error('Database error in storeRideMetrics:', err);
+  } finally {
+    client.release();
+  }
 }
 
 const updateNormalizedPowerMetric = async (riderId, rideid) => {
@@ -254,6 +267,138 @@ const upsertRideMatch = async (rideid, type, period, targetFtp, startIndex, actu
   }
 }
 
+const calculatePowerCurve = async (riderId, rideid) => {
+  if ( !isRiderId(riderId)) {
+      throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
+
+  if (!isIntegerValue(rideid)){
+    throw new TypeError("Invalid parameter: rideid must be an integer");
+  }
+
+  const client = await pool.connect();
+  try {
+    // 1. Get the ride data
+    let query = `
+        SELECT
+            b.watts
+        FROM
+            rides a left outer join ride_metrics_binary b
+            on a.rideid = b.rideid
+        WHERE
+            a.riderid = $1
+            and a.rideid = $2;`;
+
+    const params = [riderId, rideid];
+    const { rows } = await client.query(query, params);
+
+    if(!Array.isArray(rows) || rows.length === 0){
+        throw new Error(`No power data found for riderid: ${riderid} rideId: ${rideid}`);
+    }
+
+    const compressedBuffer = rows[0].watts; // Buffer from PostgreSQL
+    const decompressedData = zlib.inflateSync(compressedBuffer); // Decompress
+    const decompressedUint8Array = new Uint8Array(decompressedData); // Convert to Uint8Array
+
+  // Convert to Uint16Array (Ensure proper alignment)
+  if (decompressedUint8Array.length % 2 !== 0) {
+    throw new Error('Decompressed byte length is not a multiple of 2');
+  }
+
+  const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
+
+    // Define commonly used time intervals (seconds)
+    const POWER_CURVE_INTERVALS = [
+        1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
+        360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
+        3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
+        21600, 25200, 28800, 32400, 36000, 43200
+    ];
+
+    // 2. Calculate best power for each duration
+    const bestPower = {};
+    for (const duration of POWER_CURVE_INTERVALS) {
+        if (duration <= wattsArray.length) {
+            const { metric_value } = nSecondAverageMax(wattsArray, duration, 0, RollingAverageType.MAX);
+            bestPower[duration] = metric_value;
+        } else {
+            bestPower[duration] = 0;
+        }
+    }
+
+    // 3. Store computed power curve in ride_metrics_binary
+    const powerCurveBuffer = Buffer.from(JSON.stringify(bestPower));
+    await client.query(`
+        UPDATE
+            ride_metrics_binary
+        SET
+            power_curve = $1
+        WHERE
+            rideid = $2
+        `,
+      [powerCurveBuffer, rideid]
+    );
+
+    // 4. Retrieve the rider's weight
+    const getriderWeightLbs =  await client.query(`
+        SELECT
+            getriderWeight
+        FROM
+            getRiderWeight($1, null, $2);
+        `,
+      [riderId, rideid]
+    );
+
+    const weightInKg = getriderWeightLbs?.rows &&  getriderWeightLbs.rows.length > 0 ? 0.45359237 * getriderWeightLbs.rows[0].getriderweight : 150 * 0.45359237;
+
+    // 5. Update overall power curve if new values exceed existing records
+    let updatesMade = 0;
+    for (const [duration, power] of Object.entries(bestPower)) {
+        const wattsPerKg = power / weightInKg;
+
+        const existing = await client.query(`
+            SELECT
+                max_power_watts
+            FROM
+                power_curve
+            WHERE
+                riderid = $1
+                AND duration_seconds = $2
+                AND period = $3
+            `,
+          [riderId, duration, 'overall']
+        );
+
+        if (existing.rowCount === 0 || power > existing.rows[0].max_power_watts) {
+            if( power > 0){
+                // Only update if power is greater than 0
+                await client.query(`
+                  INSERT INTO
+                      power_curve (riderid, duration_seconds, max_power_watts, max_power_wkg, period, rideid)
+                  VALUES ($1, $2, $3, $4, $5, $6)
+                  ON CONFLICT (riderid, duration_seconds, period)
+                  DO UPDATE SET max_power_watts = EXCLUDED.max_power_watts,
+                      max_power_wkg = EXCLUDED.max_power_wkg,
+                      rideid = EXCLUDED.rideid,
+                      insertdttm = NOW()`,
+                  [riderId, duration, power, wattsPerKg, 'overall', rideid]
+                );
+                updatesMade++;
+            }
+        }
+    }
+    return updatesMade
+  } catch (err) {
+    console.error(
+      `Database error in calculatePowerCurve for rideid: ${rideid} rideid: ${rideid}`,
+      err
+    );
+  } finally {
+    client.release();
+  }
+
+}
+
 const defaultZones = {
   HR: "123,136,152,160,9999",
   Power: "190,215,245,275,310,406,9999",
@@ -276,7 +421,7 @@ function convertZonesToObject(riderZones) {
 
   return zoneObject;
 }
-// Function to process files
+
 async function watchForFiles() {
   while (!isShuttingDown) {
     try {
@@ -305,40 +450,68 @@ async function watchForFiles() {
             const riderMatchDefinitions = await getRiderMatchDefinitions(pool, Number(riderId));
             const riderZoneObject = convertZonesToObject(riderZones);
 
+            console.log(`Rider data collected for ride ${rideId}`);
+
             // Read the JSON file
             const jsonData = await fs.readFile(filePath, "utf8");
 
             // Parse the JSON data
             const data = JSON.parse(jsonData);
-/*
-            const combinedMetrics = [
-              ...(data.watts ? calculatePowerMetrics(data.watts.data) : []),
-              ...(data.cadence ? calculateCadenceMetrics(data.cadence.data) : []),
-              ...(data.heartrate ? calculateHeartRateMetrics(data.heartrate.data) : []),
-              ...(data.temp ? calculateTemperatureMetrics(data.temp.data) : []),
-              ...(data.velocity_smooth ? calculateSpeedMetrics(data.velocity_smooth.data) : []),
-              ...(data.altitude ? calculateAltitudeMetrics(data.altitude.data) : []),
-            ];
 
-            const combinedZones = [
-              (data.heartrate ? calculateZones(data.heartrate.data, riderZoneObject.HR) : []),
-              (data.watts ? calculateZones(data.watts.data, riderZoneObject.Power) : []),
-              (data.cadence ? calculateZones(data.cadence.data, riderZoneObject.Cadence) : []),
-            ];
+            console.log(`Ride data retrieved for ride ${rideId}`);
 
-            const allMatches = riderMatchDefinitions.reduce((acc, definition) => {
-              const matches = calculateMatches('watts' in data ? data.watts.data : [], 'heartrate' in data ? data.heartrate.data : [], definition, riderTFP);
-              return acc.concat(matches);
-            }, []);
+            const skip = false;
+            if(!skip){
+              const combinedMetrics = [
+                ...(data.watts ? calculatePowerMetrics(data.watts.data) : []),
+                ...(data.cadence ? calculateCadenceMetrics(data.cadence.data) : []),
+                ...(data.heartrate ? calculateHeartRateMetrics(data.heartrate.data) : []),
+                ...(data.temp ? calculateTemperatureMetrics(data.temp.data) : []),
+                ...(data.velocity_smooth ? calculateSpeedMetrics(data.velocity_smooth.data) : []),
+                ...(data.altitude ? calculateAltitudeMetrics(data.altitude.data) : []),
+              ];
 
-            await insertMetrics(rideId, combinedMetrics);
-            await updateNormalizedPowerMetric(riderId, rideId);
-            await updateRideZones(rideId, combinedZones);
+              console.log(`combinedMetrics calculated for ride ${rideId}`);
 
-            await allMatches.forEach(async (match) => {
-              await upsertRideMatch(Number(rideId), match.type, match.period, match.targetFTP, match.startIndex, match.actualperiod, match.maxaveragepower, match.averagepower, match.peakpower, match.averageheartrate);
-            })
-  */
+              const combinedZones = [
+                (data.heartrate ? calculateZones(data.heartrate.data, riderZoneObject.HR) : []),
+                (data.watts ? calculateZones(data.watts.data, riderZoneObject.Power) : []),
+                (data.cadence ? calculateZones(data.cadence.data, riderZoneObject.Cadence) : []),
+              ];
+
+              console.log(`combinedZones calculated for ride ${rideId}`);
+
+              const allMatches = riderMatchDefinitions.reduce((acc, definition) => {
+                const matches = calculateMatches('watts' in data ? data.watts.data : [], 'heartrate' in data ? data.heartrate.data : [], definition, riderTFP);
+                return acc.concat(matches);
+              }, []);
+
+              console.log(`allMatches calculated for ride ${rideId}`);
+
+              await insertMetrics(rideId, combinedMetrics);
+
+              console.log(`metrics inserted for ride ${rideId}`);
+
+              await updateNormalizedPowerMetric(riderId, rideId);
+
+              console.log(`updateNormalizedPowerMetric completed for ride ${rideId}`);
+
+              await updateRideZones(rideId, combinedZones);
+
+              console.log(`updateRideZones completed for ride ${rideId}`);
+
+              await allMatches.forEach(async (match) => {
+                await upsertRideMatch(Number(rideId), match.type, match.period, match.targetFTP, match.startIndex, match.actualperiod, match.maxaveragepower, match.averagepower, match.peakpower, match.averageheartrate);
+              })
+
+              console.log(`upsertRideMatch completed for ride ${rideId}`);
+            }
+            await storeRideMetrics(rideId, data);
+            console.log(`storeRideMetrics completed for ride ${rideId}`);
+
+            await calculatePowerCurve(riderId, rideId);
+
+            console.log(`calculatePowerCurve completed for ride ${rideId}`);
 
             console.log(`Finished processing: ${file}.`);
 

@@ -15,6 +15,8 @@ const {
   getRideMetricsById,
   getRideMatchesById,
   getRidesByDateRange,
+  getRideMetricsBinaryDetail,
+  calculatePowerCurve,
 } = require('../db/dbQueries');
 const { isValidYear, isValidDate } = require('../utility/general');
 
@@ -597,6 +599,52 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/ride/metricsbinary/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRideMetricsBinaryDetail(fastify, riderId, rideidValid);
+      return reply.code(200).send(result);
+
+    } catch (err) {
+      console.error('Database error retrieving ride metrics binary:', err);
+      return reply.code(500).send({ error: 'Database error retrieving ride metrics binary' });
+    }
+  });
+
+  fastify.get('/ride/powercurve/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await calculatePowerCurve(fastify, riderId, rideidValid);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error('Database error calculating ride power curve:', err);
+      return reply.code(500).send({ error: 'Database error calculating ride power curve' });
+    }
+  });
 }
 
 module.exports = ridesRoutes;
