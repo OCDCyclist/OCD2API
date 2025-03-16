@@ -2,10 +2,6 @@ function convertCelsiusToFahrenheit(celsius) {
   return (celsius * 9/5) + 32;
 }
 
-function convertCelsiusToFahrenheit(celsius) {
-  return (celsius * 9/5) + 32;
-}
-
 function convertMetersPerSecondToMilesPerHour(metersPerSecond) {
   const metersPerSecondToMph = 2.23694; // Conversion factor
   return metersPerSecond * metersPerSecondToMph;

@@ -17,7 +17,10 @@ const {
   getRidesByDateRange,
   getRideMetricsBinaryDetail,
   calculatePowerCurve,
+  refreshPowerCurveForYear,
+  rideDetailData,
 } = require('../db/dbQueries');
+const csvjson = require('csvjson');
 const { isValidYear, isValidDate } = require('../utility/general');
 
 async function ridesRoutes(fastify, options) {
@@ -643,6 +646,59 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error calculating ride power curve:', err);
       return reply.code(500).send({ error: 'Database error calculating ride power curve' });
+    }
+  });
+
+  fastify.get('/ride/powercurve/refresh/:year',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearToRefresh = parseInt(year, 10);
+    if (isNaN(yearToRefresh) || yearToRefresh < 2000 || yearToRefresh > 2100) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    try {
+      const result = await refreshPowerCurveForYear(fastify, riderId, yearToRefresh);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error(`Database error refreshing ride power curve for year: ${yearToRefresh}:`, err);
+      return reply.code(500).send({ error: `Database error refreshing ride power curve for year: ${yearToRefresh}:` });
+    }
+  });
+
+  fastify.get('/ride/download/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const csvData = await rideDetailData(fastify, riderId, rideidValid);
+      // Convert to CSV
+      const csvOptions = { delimiter: ',', headers: 'key' };
+      const csv = csvjson.toCSV(csvData, csvOptions);
+
+      // Set headers for download
+      reply.header('Content-Type', 'text/csv');
+      reply.header('Content-Disposition', `attachment; filename=ride_${rideidValid}.csv`);
+      return reply.send(csv);
+    } catch (err) {
+      console.error('Database error retrieving ride detail data', err);
+      return reply.code(500).send({ error: 'Database error retrieving ride detail data' });
     }
   });
 }
