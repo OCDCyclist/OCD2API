@@ -1,6 +1,6 @@
 const { DateTime } = require('luxon'); // Add Luxon for date parsing
 const { getTags, addTag, removeTag, assignTags} = require('../db/dbTagQueries');
- const { upsertWeight, getWeightTrackerData, getWeightPeriodData } = require('../db/dbQueries');
+ const { upsertWeight, getWeightTrackerData, getWeightPeriodData, getRiderPowerCurve, calculatePowerCurveMultiple } = require('../db/dbQueries');
 const {isRiderId, isLocationId, isAssignmentId, isValidTagArray} = require('../utility/general')
 
 async function userRoutes(fastify, options) {
@@ -293,6 +293,66 @@ async function userRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error retrieving zones:', err);
       return reply.code(500).send({ error: 'Database error retrieving zones' });
+    }
+  });
+
+  fastify.get('/user/powercurve',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getRiderPowerCurve(fastify, id);
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error retrieving powercurve:', err);
+      return reply.code(500).send({ error: 'Database error retrieving powercurve' });
+    }
+  });
+
+  fastify.get('/user/powercurve/:year',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearToRefresh = parseInt(year, 10);
+    if (isNaN(yearToRefresh) || yearToRefresh < 2000 || yearToRefresh > 2100) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    let query = `
+        SELECT
+            rideid
+        FROM
+            rides
+        WHERE
+            riderid = $1
+            and EXTRACT(YEAR FROM date) = $2
+        ORDER BY
+            date;
+        `;
+
+    const params = [riderId, yearToRefresh];
+    const { rows } = await fastify.pg.query(query, params);
+
+    if(!Array.isArray(rows) || rows.length === 0){
+      return reply.code(400).send({ error: `No rides exist for year: ${yearToRefresh}` });
+    }
+
+    try {
+      const rideids = rows.map((ride) => ride.rideid);
+      const update = await calculatePowerCurveMultiple(fastify, id, rideids, String(yearToRefresh));
+      return reply.code(200).send({ message: `Powercurve for year: ${yearToRefresh} has been updated with ${update}` });
+    } catch (err) {
+      console.error(`Database error calculating powercurve for year: ${yearToRefresh}`, err);
+      return reply.code(500).send({ error: `Database error calculating powercurve for year: ${yearToRefresh}` });
     }
   });
 

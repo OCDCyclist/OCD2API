@@ -15,6 +15,8 @@ const { isInteger, forEach } = require("mathjs");
 const { nSecondAverageMax, RollingAverageType } = require("../utility/metrics");
 const { convertCelsiusToFahrenheit, convertMetersPerSecondToMilesPerHour, convertMetersToFeet, convertMetersToMiles } = require("../utility/conversion");
 const {roundValue} = require('../utility/numerical');
+const { decompressIntBuffer, decompressFloatBuffer } = require('../utility/compression');
+const { formatDateTimeYYYYMMDDHHmmss } = require('../utility/dates');
 
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
@@ -2718,6 +2720,48 @@ const getReferencePowerLevels = async (fastify, riderId) =>{
     }
 }
 
+const getRiderPowerCurve = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            a.duration_seconds,
+            a.max_power_watts,
+            a.max_power_wkg,
+            a.period,
+            a.rideid,
+            b.date,
+            b.stravaid,
+            b.title
+        FROM
+            power_curve a inner join rides b
+            on a.rideid = b.rideid
+        WHERE
+            a.riderid = $1
+        ORDER BY
+            a.duration_seconds;
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRiderPowerCurve for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRiderPowerCurve with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 const getRideMetricsBinaryDetail = async (fastify, riderId, rideid) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2742,7 +2786,8 @@ const getRideMetricsBinaryDetail = async (fastify, riderId, rideid) =>{
             a.altitude,
             a.distance,
             a.temperature,
-            a.location
+            a.location,
+            a.time
         FROM
         	ride_metrics_binary a inner join rides b
             on a.rideid = b.rideid
@@ -2914,7 +2959,6 @@ const calculatePowerCurve = async (fastify, riderId, rideid) => {
     finally{
         return updatesMade
     }
-
 }
 
 const refreshPowerCurveForYear = async (fastify, riderId, year) => {
@@ -2930,8 +2974,6 @@ const refreshPowerCurveForYear = async (fastify, riderId, year) => {
       throw new TypeError("Invalid parameter: year must be a valid year");
     }
 
-    // 1. Get the rideIds for the year
-    // 1. Get the ride data
     let query = `
         SELECT
             rideid
@@ -2958,29 +3000,135 @@ const refreshPowerCurveForYear = async (fastify, riderId, year) => {
     return updatesMade;
 }
 
-// Utility function to decompress a buffer
-function decompressBuffer(buffer) {
-    if (!Buffer.isBuffer(buffer)) return [];
-
-    const decompressedData = zlib.inflateSync(buffer);
-    const decompressedUint8Array = new Uint8Array(decompressedData);
-
-    if (decompressedUint8Array.length % 2 !== 0) {
-        throw new Error('Decompressed byte length is not a multiple of 2');
+const calculatePowerCurveMultiple = async (fastify, riderId, rideids, periodName) => {
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
     }
 
-    return Array.from(new Uint16Array(decompressedUint8Array.buffer));
-}
+    if (!isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
 
-// Function to format date-time in 'YYYY-MM-DD HH:mm:ss' format
-function formatDateTime(date) {
-    return date.getFullYear() + '-' +
-        String(date.getMonth() + 1).padStart(2, '0') + '-' +
-        String(date.getDate()).padStart(2, '0') + ' ' +
-        String(date.getHours()).padStart(2, '0') + ':' +
-        String(date.getMinutes()).padStart(2, '0') + ':' +
-        String(date.getSeconds()).padStart(2, '0');
-}
+    if (!Array.isArray(rideids) || rideids.length === 0 || !rideids.every(isIntegerValue)) {
+        throw new TypeError("Invalid parameter: rideids must be an array of integers");
+    }
+
+    if (typeof periodName !== "string" || periodName.trim() === "") {
+        throw new TypeError("Invalid parameter: periodName must be a non-empty string");
+    }
+
+    const POWER_CURVE_INTERVALS = [
+        1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
+        360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
+        3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
+        21600, 25200, 28800, 32400, 36000, 43200
+    ];
+
+    let overallBestPower = {};
+
+    // Process each ride and compute its power curve
+    for (const rideid of rideids) {
+        const query = `
+            SELECT
+                b.watts
+            FROM
+                rides a LEFT OUTER JOIN ride_metrics_binary b
+                ON a.rideid = b.rideid
+            WHERE
+                a.riderid = $1 AND a.rideid = $2;
+        `;
+
+        const { rows } = await fastify.pg.query(query, [riderId, rideid]);
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+            continue;
+        }
+
+        try {
+            const compressedBuffer = rows[0]?.watts;
+            if (!Buffer.isBuffer(compressedBuffer)) {
+                continue;
+            }
+
+            const decompressedData = zlib.inflateSync(compressedBuffer);
+            const decompressedUint8Array = new Uint8Array(decompressedData);
+
+            if (decompressedUint8Array.length % 2 !== 0) {
+                throw new Error("Decompressed byte length is not a multiple of 2");
+            }
+
+            const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
+
+            const bestPower = {};
+            for (const duration of POWER_CURVE_INTERVALS) {
+                if (duration <= wattsArray.length) {
+                    const { metric_value } = nSecondAverageMax(wattsArray, duration, 0, RollingAverageType.MAX);
+                    bestPower[duration] = metric_value;
+                } else {
+                    bestPower[duration] = 0;
+                }
+            }
+
+            // Retrieve rider's weight for this ride
+            const weightQuery = `
+                SELECT getriderWeight FROM getRiderWeight($1, NULL, $2);
+            `;
+            const weightResult = await fastify.pg.query(weightQuery, [riderId, rideid]);
+            const weightInKg = weightResult?.rows?.length > 0
+                ? 0.45359237 * weightResult.rows[0].getriderweight
+                : 150 * 0.45359237;
+
+            // Update overall power curve with best values found
+            for (const duration of POWER_CURVE_INTERVALS) {
+                const power = bestPower[duration] || 0;
+                if (power > (overallBestPower[duration]?.watts || 0)) {
+                    overallBestPower[duration] = {
+                        watts: power,
+                        wattsPerKg: power / weightInKg,
+                        rideid,
+                        weightInKg
+                    };
+                }
+            }
+        } catch (err) {
+            console.error("Error processing ride:", rideid, err);
+        }
+    }
+
+    // Update the power_curve table with the best power values
+    let updatesMade = 0;
+    for (const [duration, powerData] of Object.entries(overallBestPower)) {
+        const { watts, wattsPerKg, rideid } = powerData;
+
+        const existing = await fastify.pg.query(
+            `
+            SELECT max_power_watts FROM power_curve
+            WHERE riderid = $1 AND duration_seconds = $2 AND period = $3
+            `,
+            [riderId, duration, periodName]
+        );
+
+        if (existing.rowCount === 0 || watts > existing.rows[0].max_power_watts) {
+            if (watts > 0) {
+                await fastify.pg.query(
+                    `
+                    INSERT INTO power_curve (riderid, duration_seconds, max_power_watts, max_power_wkg, period, rideid)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (riderid, duration_seconds, period)
+                    DO UPDATE SET
+                        max_power_watts = EXCLUDED.max_power_watts,
+                        max_power_wkg = EXCLUDED.max_power_wkg,
+                        rideid = EXCLUDED.rideid,
+                        insertdttm = NOW()
+                    `,
+                    [riderId, duration, watts, wattsPerKg, periodName, rideid]
+                );
+                updatesMade++;
+            }
+        }
+    }
+    return updatesMade;
+};
 
 const rideDetailData = async (fastify, riderId, rideid) => {
     if (!isFastify(fastify)) {
@@ -3006,7 +3154,8 @@ const rideDetailData = async (fastify, riderId, rideid) => {
             b.altitude,
             b.distance,
             b.temperature,
-            b.location
+            b.location,
+            b.time
         FROM
             rides a
             LEFT JOIN ride_metrics_binary b ON a.rideid = b.rideid
@@ -3025,13 +3174,14 @@ const rideDetailData = async (fastify, riderId, rideid) => {
     const startTime = new Date(ride.start_datetime);
 
     // Decompress all binary fields
-    const wattsArray = decompressBuffer(ride.watts);
-    const heartrateArray = decompressBuffer(ride.heartrate);
-    const cadenceArray = decompressBuffer(ride.cadence);
-    const velocityArray = decompressBuffer(ride.velocity_smooth);
-    const altitudeArray = decompressBuffer(ride.altitude);
-    const distanceArray = decompressBuffer(ride.distance);
-    const temperatureArray = decompressBuffer(ride.temperature);
+    const wattsArray = decompressIntBuffer(ride.watts);
+    const heartrateArray = decompressIntBuffer(ride.heartrate);
+    const cadenceArray = decompressIntBuffer(ride.cadence);
+    const velocityArray = decompressFloatBuffer(ride.velocity_smooth);
+    const altitudeArray = decompressIntBuffer(ride.altitude);
+    const distanceArray = decompressFloatBuffer(ride.distance);
+    const temperatureArray = decompressIntBuffer(ride.temperature);
+    const timeArray = decompressIntBuffer(ride.time);
 
     // Determine the length based on the longest array
     const maxLength = Math.max(
@@ -3042,21 +3192,23 @@ const rideDetailData = async (fastify, riderId, rideid) => {
         altitudeArray.length,
         distanceArray.length,
         temperatureArray.length,
+        timeArray.length,
     );
 
     const csvData = [];
     for (let i = 0; i < maxLength; i++) {
-        const timestamp = new Date(startTime.getTime() + i * 1000);
+        const timestamp = new Date(startTime.getTime() + (timeArray[i]) * 1000);
         csvData.push({
             index: i + 1,
-            time: formatDateTime(timestamp),
+            time: formatDateTimeYYYYMMDDHHmmss(timestamp),
             watts: wattsArray[i] ?? 0,
             heartrate: heartrateArray[i] ?? 0,
             cadence: cadenceArray[i] ?? 0,
-            velocity_smooth: roundValue(convertMetersPerSecondToMilesPerHour(velocityArray[i] ?? 0),1) ,
+            velocity_smooth: roundValue(convertMetersPerSecondToMilesPerHour(velocityArray[i] ?? 0),4) ,
             altitude: roundValue(convertMetersToFeet(altitudeArray[i] ?? 0),0),
-            distance: roundValue(convertMetersToMiles(distanceArray[i] ?? 0),2),
+            distance: roundValue(convertMetersToMiles(distanceArray[i] ?? 0),4),
             temperature: roundValue(convertCelsiusToFahrenheit(temperatureArray[i] ?? 0),1),
+            elapsed_seconds: timeArray[i] ?? 0,
         });
     }
     return csvData
@@ -3122,9 +3274,11 @@ module.exports = {
     getStreaks_1_day,
     getStreaks_7days200,
     getReferencePowerLevels,
+    getRiderPowerCurve,
     getRideMetricsBinaryDetail,
     calculatePowerCurve,
     refreshPowerCurveForYear,
+    calculatePowerCurveMultiple,
     rideDetailData,
 };
 

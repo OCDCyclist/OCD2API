@@ -76,13 +76,14 @@ const storeRideMetrics = async (rideId, metrics) => {
       altitude: metrics.altitude ? compress(metrics.altitude.data, Uint16Array) : compress([], Uint16Array),
       distance: metrics.distance ? compress(metrics.distance.data, Float32Array) : compress([], Float32Array),
       temperature: metrics.temp ? compress(metrics.temp.data, Uint16Array) : compress([], Uint16Array),
-      location: metrics.latlng ? compress(metrics.latlng.data.flat(), Float32Array) : compress([], Float32Array)
+      location: metrics.latlng ? compress(metrics.latlng.data.flat(), Float32Array) : compress([], Float32Array),
+      time: metrics.time ? compress(metrics.time.data, Uint16Array) : compress([], Uint16Array),
   };
 
   try {
       await client.query(`
-        INSERT INTO ride_metrics_binary (rideid, watts, heartrate, cadence, velocity_smooth, altitude, distance, temperature, location)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO ride_metrics_binary (rideid, watts, heartrate, cadence, velocity_smooth, altitude, distance, temperature, location, time)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (rideid) DO UPDATE SET
             watts = EXCLUDED.watts,
             heartrate = EXCLUDED.heartrate,
@@ -91,7 +92,8 @@ const storeRideMetrics = async (rideId, metrics) => {
             altitude = EXCLUDED.altitude,
             distance = EXCLUDED.distance,
             temperature = EXCLUDED.temperature,
-            location = EXCLUDED.location`,
+            location = EXCLUDED.location,
+            time = EXCLUDED.time`,
             [rideId, ...Object.values(compressedData)]
       );
   } catch (err) {

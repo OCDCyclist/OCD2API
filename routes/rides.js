@@ -672,6 +672,29 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/ride/powercurve/calculate/:year',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearToRefresh = parseInt(year, 10);
+    if (isNaN(yearToRefresh) || yearToRefresh < 2000 || yearToRefresh > 2100) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    try {
+      const result = await calculatePowerCurveForYear(fastify, riderId, yearToRefresh);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error(`Database error refreshing ride power curve for year: ${yearToRefresh}:`, err);
+      return reply.code(500).send({ error: `Database error refreshing ride power curve for year: ${yearToRefresh}:` });
+    }
+  });
+
   fastify.get('/ride/download/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
     const { rideid } = request.params;

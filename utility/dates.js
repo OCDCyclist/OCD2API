@@ -20,4 +20,15 @@ const getFiveYearsEarlier= (date) => {
     return dayjs(date).subtract(5, 'years').startOf('day').toISOString();
 }
 
-module.exports = { getRoundedCurrentDateISO, getSixMonthsEarlier, getTwelveMonthsEarlier, getFiveYearsEarlier };
+// Function to format date-time in 'YYYY-MM-DD HH:mm:ss' format
+function formatDateTimeYYYYMMDDHHmmss(date) {
+    return date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0') + ' ' +
+        String(date.getHours()).padStart(2, '0') + ':' +
+        String(date.getMinutes()).padStart(2, '0') + ':' +
+        String(date.getSeconds()).padStart(2, '0');
+}
+
+
+module.exports = { getRoundedCurrentDateISO, getSixMonthsEarlier, getTwelveMonthsEarlier, getFiveYearsEarlier, formatDateTimeYYYYMMDDHHmmss };
