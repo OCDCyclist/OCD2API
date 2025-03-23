@@ -1,7 +1,7 @@
 const xss = require("xss");
 const dayjs = require('dayjs');
 const zlib = require("zlib");
-const { isRiderId, isIntegerValue, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber } = require("../utility/general");
+const { isRiderId, isIntegerValue, isSegmentId, isFastify, isEmpty, isValidDate, isValidNumber, POWER_CURVE_INTERVALS } = require("../utility/general");
 const { getStravaSegmentById, convertGearIdToOCD } = require('../db/stravaRideData');
 const {
     convertToImperial,
@@ -2157,6 +2157,41 @@ const getRideIdForMostRecentMissingStreams = async (fastify, riderId) =>{
     }
 }
 
+const getRideIdForMostRecentRides = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            EXTRACT(YEAR FROM date) AS year
+        FROM rides
+        WHERE
+            riderid = $1
+            AND insertDttm >= NOW() - INTERVAL '2 hours'
+        ORDER BY
+            insertDttm;
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRideIdForMostRecentRides for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideIdForMostRecentRides with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 const getDistinctClusterCentroids = async (fastify, riderId) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -2864,21 +2899,14 @@ const calculatePowerCurve = async (fastify, riderId, rideid) => {
         const decompressedData = zlib.inflateSync(compressedBuffer); // Decompress
         const decompressedUint8Array = new Uint8Array(decompressedData); // Convert to Uint8Array
 
-       // Convert to Uint16Array (Ensure proper alignment)
-       if (decompressedUint8Array.length % 2 !== 0) {
-         throw new Error('Decompressed byte length is not a multiple of 2');
-       }
+        // Convert to Uint16Array (Ensure proper alignment)
+        if (decompressedUint8Array.length % 2 !== 0) {
+            throw new Error('Decompressed byte length is not a multiple of 2');
+        }
 
-       const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
+        const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
 
         // Define commonly used time intervals (seconds)
-        const POWER_CURVE_INTERVALS = [
-            1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
-            360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
-            3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
-            21600, 25200, 28800, 32400, 36000, 43200
-        ];
-
         // 2. Calculate best power for each duration
         const bestPower = {};
         for (const duration of POWER_CURVE_INTERVALS) {
@@ -3016,13 +3044,6 @@ const calculatePowerCurveMultiple = async (fastify, riderId, rideids, periodName
     if (typeof periodName !== "string" || periodName.trim() === "") {
         throw new TypeError("Invalid parameter: periodName must be a non-empty string");
     }
-
-    const POWER_CURVE_INTERVALS = [
-        1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
-        360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
-        3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
-        21600, 25200, 28800, 32400, 36000, 43200
-    ];
 
     let overallBestPower = {};
 
@@ -3248,6 +3269,7 @@ module.exports = {
     getRidesSearch,
     getStravaIdForRideId,
     getRideIdForMostRecentMissingStreams,
+    getRideIdForMostRecentRides,
     getLookback,
     updateRide,
     getSegmentEfforts,

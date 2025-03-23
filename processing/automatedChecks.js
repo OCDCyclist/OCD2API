@@ -8,11 +8,12 @@ const {
     processRideStreams,
     getStravaIdForRideId,
     getRideIdForMostRecentMissingStreams,
+    getRideIdForMostRecentRides,
+    calculatePowerCurveMultiple,
 } = require('../db/dbQueries');
 const {
     getStravaActivityStreamsById,
 } = require('../db/stravaRideData');
-
 
 const updateMissingStreams = async (fastify) => {
     const riderId = 1; // hardwired for now
@@ -46,7 +47,49 @@ const updateMissingStreams = async (fastify) => {
     }
 };
 
+const updatePowerCurve = async (fastify) => {
+    const riderId = 1; // hardwired for now
+
+    const stravaCredentials = await getStravaCredentials(fastify);
+    let tokens = await getStravaTokens(fastify, riderId);
+
+    if (isStravaTokenExpired(tokens)) {
+      tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+    }
+
+    let rides = undefined
+    try{
+        rides = await getRideIdForMostRecentRides(fastify, riderId);
+    }
+    catch(error){
+        console.error('Unable to update streams', databaseError);
+        return;
+    }
+
+    // Grouping rideids by year
+    const groupedRides = rides.reduce((acc, { year, rideid }) => {
+        const yearKey = year.toString();
+        if (!acc[yearKey]) {
+            acc[yearKey] = { year: parseInt(yearKey, 10), rideids: [] };
+        }
+        acc[yearKey].rideids.push(rideid);
+    return acc;
+    }, {});
+
+    const resultArray = Object.values(groupedRides);
+
+    for(let i = 0; i < resultArray.length; i++){
+        const yearToUpdate = resultArray[i];
+        try{
+            await calculatePowerCurveMultiple(fastify, riderId, yearToUpdate.rideids, yearToUpdate.year.toString());
+        }
+        catch(error){
+            console.error(`Error updating power curve for year: ${yearToUpdate.year} rideids: ${yearToUpdate.rideids.join(",")}`, error);
+        }
+    }
+};
+
 module.exports = {
-    updateMissingStreams
+    updateMissingStreams, updatePowerCurve
 };
 

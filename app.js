@@ -1,5 +1,5 @@
 const winston = require('winston');
-const {updateMissingStreams} = require('./processing/automatedChecks');
+const {updateMissingStreams, updatePowerCurve} = require('./processing/automatedChecks');
 const {logMessage} = require('./utility/general');
 const { Worker } = require("worker_threads");
 const path = require("path");
@@ -162,6 +162,7 @@ const start = async () => {
     console.log('Server is running on http://localhost:3000');
     logger.info('Server is running on http://localhost:3000');
     startWorker();
+
   } catch (err) {
     const message = `Server is not running: ${JSON.stringify(err)}`;
     fastify.log.error(message);
@@ -170,31 +171,47 @@ const start = async () => {
   }
 };
 
-let taskInterval;
-const intervalInMinutes = 21;
-const intervalInMilliseconds = intervalInMinutes * 60 * 1000
+let taskIntervals = [];
+const interval1InMinutes = 21;
+const interval1InMilliseconds = interval1InMinutes * 60 * 1000
+
+const interval2InMinutes = 61;
+const interval2InMilliseconds = interval2InMinutes * 60 * 1000
 
 fastify.ready(() => {
-  taskInterval = setInterval(() => {
-    runPeriodicTask();
-  }, intervalInMilliseconds);
+  taskIntervals.push( setInterval(() => {
+    runPeriodicTask1();
+  }, interval1InMilliseconds));
+
+  taskIntervals.push( setInterval(() => {
+    runPeriodicTask2();
+  }, interval2InMilliseconds));
 });
 
 fastify.addHook('onClose', (instance, done) => {
-  if (taskInterval) {
-    clearInterval(taskInterval);
-    logger.info('Periodic task stopped.');
-    console.log("Periodic task stopped.");
+  if (taskIntervals.length > 0) {
+    taskIntervals.forEach(interval => clearInterval(interval));
+    logger.info('Periodic task(s) stopped.');
+    console.log("Periodic task(s) stopped.");
   }
   done();
 });
 
-async function runPeriodicTask() {
+async function runPeriodicTask1() {
   try {
     await updateMissingStreams(fastify);
   } catch (error) {
     logger.info(`Error running updateMissingStreams: ${error.message}`);
     console.error("Error running updateMissingStreams:", error);
+  }
+}
+
+async function runPeriodicTask2() {
+  try {
+    await updatePowerCurve(fastify);
+  } catch (error) {
+    logger.info(`Error running updatePowerCurve: ${error.message}`);
+    console.error("Error running updatePowerCurve:", error);
   }
 }
 
