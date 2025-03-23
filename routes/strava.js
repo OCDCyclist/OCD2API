@@ -56,7 +56,6 @@ async function stravaRoutes(fastify, options) {
 
         setImmediate(async () => {
             // After successfully checking for new ride(s), check for
-            // 
             //  segments and other details
             try{
                 for( let i = 0; i < ridesAdded.length; i++){
@@ -301,7 +300,6 @@ async function stravaRoutes(fastify, options) {
 
         reply.send({processed: true});
     });
-
 
     fastify.get('/rider/getAthleteDetail', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;  // request.user is populated after JWT verification

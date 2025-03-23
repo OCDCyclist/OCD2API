@@ -72,4 +72,19 @@ function logMessage(message) {
     console.log(`${message} at: ${hours}:${minutes}:${seconds}`);
 }
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear, logMessage };
+const logDetailMessage = (actionMsg, valueTitle,  value) => console.log(`[${new Date().toISOString()}] ${actionMsg} completed for ${valueTitle} ${value}`);
+
+const POWER_CURVE_INTERVALS = [
+    1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
+    360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
+    3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
+    21600, 25200, 28800, 32400, 36000, 43200
+];
+
+const DEFAULT_ZONES = {
+    HR: "123,136,152,160,9999",
+    Power: "190,215,245,275,310,406,9999",
+    Cadence: "60,70,80,90,100"
+  };
+
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear, logMessage, logDetailMessage, POWER_CURVE_INTERVALS, DEFAULT_ZONES };

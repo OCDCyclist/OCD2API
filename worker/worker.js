@@ -3,7 +3,6 @@ const fs = require("fs/promises");
 const path = require("path");
 const { workerData } = require('worker_threads');
 const { Pool } = require('pg');
-const zlib = require("zlib");
 const { isRiderId, isIntegerValue } = require("../utility/general");
 const {
   calculatePowerMetrics,
@@ -18,6 +17,8 @@ const {
 } = require("../processing/calculateZones");
 const {calculateMatches} = require("../processing/calculateMatches");
 const { nSecondAverageMax, RollingAverageType } = require("../utility/metrics");
+const { logDetailMessage, POWER_CURVE_INTERVALS, DEFAULT_ZONES } = require("../utility/general");
+const { compress, inflateSync } = require("../utility/compression");
 
 // Navigate relative to the worker.js file's directory (__dirname)
 const inputDir = path.resolve(__dirname, "../data/activities/input");
@@ -57,12 +58,6 @@ const insertMetrics = async (rideid, metrics) => {
   } finally {
     client.release();
   }
-};
-
-const compress = (data, type) => {
-  const originalData = new type(data);
-  const compressedData = zlib.deflateSync(Buffer.from(originalData.buffer));
-  return compressedData;
 };
 
 const storeRideMetrics = async (rideId, metrics) => {
@@ -299,23 +294,15 @@ const calculatePowerCurve = async (riderId, rideid) => {
     }
 
     const compressedBuffer = rows[0].watts; // Buffer from PostgreSQL
-    const decompressedData = zlib.inflateSync(compressedBuffer); // Decompress
+    const decompressedData = inflateSync(compressedBuffer); // Decompress
     const decompressedUint8Array = new Uint8Array(decompressedData); // Convert to Uint8Array
 
-  // Convert to Uint16Array (Ensure proper alignment)
-  if (decompressedUint8Array.length % 2 !== 0) {
-    throw new Error('Decompressed byte length is not a multiple of 2');
-  }
+    // Convert to Uint16Array (Ensure proper alignment)
+    if (decompressedUint8Array.length % 2 !== 0) {
+      throw new Error('Decompressed byte length is not a multiple of 2');
+    }
 
-  const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
-
-    // Define commonly used time intervals (seconds)
-    const POWER_CURVE_INTERVALS = [
-        1, 2, 5, 10, 15, 20, 30, 45, 60, 120, 180, 240, 300,
-        360, 480, 600, 720, 900, 1200, 1500, 1800, 2400, 3000,
-        3600, 4500, 5400, 6300, 7200, 9000, 10800, 14400, 18000,
-        21600, 25200, 28800, 32400, 36000, 43200
-    ];
+    const wattsArray = new Uint16Array(decompressedUint8Array.buffer);
 
     // 2. Calculate best power for each duration
     const bestPower = {};
@@ -398,14 +385,7 @@ const calculatePowerCurve = async (riderId, rideid) => {
   } finally {
     client.release();
   }
-
 }
-
-const defaultZones = {
-  HR: "123,136,152,160,9999",
-  Power: "190,215,245,275,310,406,9999",
-  Cadence: "60,70,80,90,100"
-};
 
 function convertZonesToObject(riderZones) {
   const zoneObject = {};
@@ -415,9 +395,9 @@ function convertZonesToObject(riderZones) {
   });
 
   // Add default values for missing zone types
-  Object.keys(defaultZones).forEach(zoneType => {
+  Object.keys(DEFAULT_ZONES).forEach(zoneType => {
       if (!zoneObject[zoneType]) {
-          zoneObject[zoneType] = defaultZones[zoneType].split(",").map(Number);
+          zoneObject[zoneType] = DEFAULT_ZONES[zoneType].split(",").map(Number);
       }
   });
 
@@ -452,7 +432,7 @@ async function watchForFiles() {
             const riderMatchDefinitions = await getRiderMatchDefinitions(pool, Number(riderId));
             const riderZoneObject = convertZonesToObject(riderZones);
 
-            console.log(`Rider data collected for ride ${rideId}`);
+            logDetailMessage('Rider data collected for ride', 'ride', rideId);
 
             // Read the JSON file
             const jsonData = await fs.readFile(filePath, "utf8");
@@ -460,7 +440,7 @@ async function watchForFiles() {
             // Parse the JSON data
             const data = JSON.parse(jsonData);
 
-            console.log(`Ride data retrieved for ride ${rideId}`);
+            logDetailMessage('Ride data retrieved for ride', 'ride', rideId);
 
             const skip = false;
             if(!skip){
@@ -473,7 +453,7 @@ async function watchForFiles() {
                 ...(data.altitude ? calculateAltitudeMetrics(data.altitude.data) : []),
               ];
 
-              console.log(`combinedMetrics calculated for ride ${rideId}`);
+              logDetailMessage('combinedMetrics', 'ride', rideId);
 
               const combinedZones = [
                 (data.heartrate ? calculateZones(data.heartrate.data, riderZoneObject.HR) : []),
@@ -481,50 +461,49 @@ async function watchForFiles() {
                 (data.cadence ? calculateZones(data.cadence.data, riderZoneObject.Cadence) : []),
               ];
 
-              console.log(`combinedZones calculated for ride ${rideId}`);
+              logDetailMessage('combinedZones', 'ride', rideId);
 
               const allMatches = riderMatchDefinitions.reduce((acc, definition) => {
                 const matches = calculateMatches('watts' in data ? data.watts.data : [], 'heartrate' in data ? data.heartrate.data : [], definition, riderTFP);
                 return acc.concat(matches);
               }, []);
 
-              console.log(`allMatches calculated for ride ${rideId}`);
+              logDetailMessage('allMatches', 'ride', rideId);
 
               await insertMetrics(rideId, combinedMetrics);
 
-              console.log(`metrics inserted for ride ${rideId}`);
+              logDetailMessage('insertMetrics', 'ride', rideId);
 
               await updateNormalizedPowerMetric(riderId, rideId);
 
-              console.log(`updateNormalizedPowerMetric completed for ride ${rideId}`);
+              logDetailMessage('updateNormalizedPowerMetric', 'ride', rideId);
 
               await updateRideZones(rideId, combinedZones);
 
-              console.log(`updateRideZones completed for ride ${rideId}`);
+              logDetailMessage('updateRideZones', 'ride', rideId);
 
               await allMatches.forEach(async (match) => {
                 await upsertRideMatch(Number(rideId), match.type, match.period, match.targetFTP, match.startIndex, match.actualperiod, match.maxaveragepower, match.averagepower, match.peakpower, match.averageheartrate);
               })
 
-              console.log(`upsertRideMatch completed for ride ${rideId}`);
+              logDetailMessage('upsertRideMatch', 'ride', rideId);
             }
             await storeRideMetrics(rideId, data);
-            console.log(`storeRideMetrics completed for ride ${rideId}`);
+            logDetailMessage('storeRideMetrics', 'ride', rideId);
 
             await calculatePowerCurve(riderId, rideId);
 
-            console.log(`calculatePowerCurve completed for ride ${rideId}`);
+            logDetailMessage('calculatePowerCurve', 'ride', rideId);
 
-            console.log(`Finished processing: ${file}.`);
+            logDetailMessage('Finished processing', 'file', file);
 
-            // Move file to processed directory
             const processedPath = path.join(processedDir, file);
             await fs.rename(filePath, processedPath);
           }
         }
       }
     } catch (error) {
-      console.error("Error watching files:", error);
+      logDetailMessage('Error watching files', file, error.message);
     }
 
     // Wait for a short interval before checking again

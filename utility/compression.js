@@ -1,3 +1,13 @@
+const zlib = require("zlib");
+
+const compress = (data, type) => {
+    const originalData = new type(data);
+    const compressedData = zlib.deflateSync(Buffer.from(originalData.buffer));
+    return compressedData;
+};
+
+const inflateSync =  (compressedBuffer) => zlib.inflateSync(compressedBuffer);
+
 // Utility function to decompress an integer buffer
 function decompressIntBuffer(compressedBuffer) {
     if( !Buffer.isBuffer(compressedBuffer)){
@@ -37,4 +47,4 @@ function decompressFloatBuffer(compressedBuffer) {
     return [...float32Array];
 }
 
-module.exports = { decompressIntBuffer, decompressFloatBuffer };
+module.exports = { compress, inflateSync, decompressIntBuffer, decompressFloatBuffer };
