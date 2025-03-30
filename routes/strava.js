@@ -10,6 +10,7 @@ const { getFirstSegmentEffortDate,
         getActiveCentroid,
         getStravaIdForRideId,
         getRideIdForMostRecentMissingStreams,
+        calculateRideBoundingBoxForRideId,
 } = require('../db/dbQueries');
 const { getStravaCredentials,
         getStravaTokens,
@@ -26,6 +27,7 @@ const { getStravaRecentRides,
         getStravaSegmentEffortsForRider,
 } = require('../db/stravaRideData');
 const { clusterRides } = require('../utility/clustering');
+const { logDetailMessage } = require("../utility/general");
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
@@ -45,7 +47,10 @@ async function stravaRoutes(fastify, options) {
         }
 
         const recentRides = await getStravaRecentRides(tokens.accesstoken);
+        logDetailMessage('Retrieve recent rides', 'rider', riderId);
+
         const ridesAdded = await upsertRides(fastify, riderId, recentRides, defaultBikeId);
+        logDetailMessage('Rides added', 'rider', riderId);
 
         reply.send({
             success: true,
@@ -63,6 +68,7 @@ async function stravaRoutes(fastify, options) {
                     // Retrieve recent ride details from Strava with segment and other information
                     const stravaRideDetail = await getStravaActivityById(tokens.accesstoken, ride.id);
                     await processRideSegments(fastify, riderId, stravaRideDetail, tokens);
+                    logDetailMessage('processRideSegments', 'ride', ride.id);
                 }
             }
             catch (databaseError) {
@@ -75,6 +81,7 @@ async function stravaRoutes(fastify, options) {
                     const ride = ridesAdded[i];
                     const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, ride.id);
                     await processRideStreams(fastify, riderId, ride.rideid, ride.id, stravaRideDetail);
+                    logDetailMessage('processRideStreams', 'ride', ride.id);
                 }
             }
             catch (databaseError) {
@@ -82,10 +89,11 @@ async function stravaRoutes(fastify, options) {
             }
 
             try {
-                // this updates ride metrics like intensity factor, TSS
+                // this updates ride metrics like intensity factor, TSS.  This call takes a long time to run.
                 if(ridesAdded.length > 0){
                     const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
                     await fastify.pg.query(updaterideMetrics, [riderId]);
+                    logDetailMessage('updaterideMetrics', 'rider', riderId);
                 }
             } catch (updateError) {
                 console.error('Error updating ride metrics', updateError);
@@ -99,9 +107,22 @@ async function stravaRoutes(fastify, options) {
                     await clusterRides(fastify, riderId, activeClusterId);
                     const updateClusterTags = 'CALL update_ride_clusters_with_tags($1,$2)';
                     await fastify.pg.query(updateClusterTags, [riderId, activeClusterId]);
+                    logDetailMessage('update_ride_clusters_with_tags', 'activeClusterId', activeClusterId);
                 }
             } catch (error) {
                 console.error('Error clustering rides:', error);
+            }
+
+            // update the ride bounding box
+            try{
+                for( let i = 0; i < ridesAdded.length; i++){
+                    const ride = ridesAdded[i];
+                    await calculateRideBoundingBoxForRideId(fastify, riderId, ride.id);
+                    logDetailMessage('processRideBoundingBox', 'ride', ride.id);
+                }
+            }
+            catch (databaseError) {
+                console.error('Error updating ride bounding box', databaseError);
             }
         });
     });

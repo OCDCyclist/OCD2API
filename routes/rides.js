@@ -19,6 +19,9 @@ const {
   calculatePowerCurve,
   refreshPowerCurveForYear,
   rideDetailData,
+  calculateRideBoundingBoxForRideId,
+  calculateRideBoundingBoxForYear,
+  getRidesWithSimilarRoutes,
 } = require('../db/dbQueries');
 const csvjson = require('csvjson');
 const { isValidYear, isValidDate } = require('../utility/general');
@@ -722,6 +725,81 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error retrieving ride detail data', err);
       return reply.code(500).send({ error: 'Database error retrieving ride detail data' });
+    }
+  });
+
+  fastify.get('/ride/boundingbox/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await calculateRideBoundingBoxForRideId(fastify, riderId, rideidValid);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error('Database error calculating ride bounding box:', err);
+      return reply.code(500).send({ error: 'Database error calculating ride bounding box' });
+    }
+  });
+
+  fastify.get('/ride/boundingbox/calculate/:year',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearToRefresh = parseInt(year, 10);
+    if (isNaN(yearToRefresh) || yearToRefresh < 2000 || yearToRefresh > 2100) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    try {
+      const result = await calculateRideBoundingBoxForYear(fastify, riderId, yearToRefresh);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error(`Database error updating ride bounding box for year: ${yearToRefresh}:`, err);
+      return reply.code(500).send({ error: `${err.message}` });
+    }
+  });
+
+
+  fastify.get('/ride/getSimilerRides/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValue = parseInt(rideid, 10);
+
+    if( !rideidValue || rideidValue === 0 ){
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRidesWithSimilarRoutes(fastify, id, rideidValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
     }
   });
 }

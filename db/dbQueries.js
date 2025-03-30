@@ -17,6 +17,7 @@ const { convertCelsiusToFahrenheit, convertMetersPerSecondToMilesPerHour, conver
 const {roundValue} = require('../utility/numerical');
 const { decompressIntBuffer, decompressFloatBuffer } = require('../utility/compression');
 const { formatDateTimeYYYYMMDDHHmmss } = require('../utility/dates');
+const { calculateRideBoundingBox } = require('../processing/calculateRideBoundingBox');
 
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
@@ -2835,15 +2836,15 @@ const getRideMetricsBinaryDetail = async (fastify, riderId, rideid) =>{
         const { rows } = await fastify.pg.query(query, params);
         if(Array.isArray(rows) && rows.length > 0){
             return {
-                watts: decompress(rows[0].watts, Uint16Array),
-                heartrate: decompress(rows[0].heartrate, Uint16Array),
-                cadence: decompress(rows[0].cadence, Uint16Array),
-                velocity_smooth: decompress(rows[0].velocity_smooth, Float32Array),
-                altitude: decompress(rows[0].altitude, Uint16Array),
-                distance: decompress(rows[0].distance, Float32Array),
-                temperature: decompress(rows[0].temperature, Uint16Array),
+                watts: decompressIntBuffer(rows[0].watts, Uint16Array),
+                heartrate: decompressIntBuffer(rows[0].heartrate, Uint16Array),
+                cadence: decompressIntBuffer(rows[0].cadence, Uint16Array),
+                velocity_smooth: decompressFloatBuffer(rows[0].velocity_smooth, Float32Array),
+                altitude: decompressIntBuffer(rows[0].altitude, Uint16Array),
+                distance: decompressFloatBuffer(rows[0].distance, Float32Array),
+                temperature: decompressIntBuffer(rows[0].temperature, Uint16Array),
                 location: (() => {
-                    const floatArray = decompress(rows[0].location, Float32Array);
+                    const floatArray = decompressFloatBuffer(rows[0].location, Float32Array);
                     const locations = [];
                     for (let i = 0; i < floatArray.length; i += 2) {
                         locations.push([floatArray[i], floatArray[i + 1]]);
@@ -2856,6 +2857,53 @@ const getRideMetricsBinaryDetail = async (fastify, riderId, rideid) =>{
 
     } catch (error) {
         throw new Error(`Database error fetching getRideMetricsBinaryDetail with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
+    }
+}
+
+const getRideLocationBinaryDetail = async (fastify, riderId, rideid) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isInteger(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    const params = [riderId, rideid];
+
+    let query = `
+        SELECT
+            a.location
+        FROM
+        	ride_metrics_binary a inner join rides b
+            on a.rideid = b.rideid
+        	and b.riderid = $1
+        WHERE
+            a.rideid =$2;
+    `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows) && rows.length > 0){
+            return {
+                location: (() => {
+                    const floatArray = decompressFloatBuffer(rows[0].location, Float32Array);
+                    const locations = [];
+                    for (let i = 0; i < floatArray.length; i += 2) {
+                        locations.push([floatArray[i], floatArray[i + 1]]);
+                    }
+                    return locations;
+                })()
+            };
+        }
+        return {};
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideLocationBinaryDetail with riderId ${riderId} rideid ${rideid}: ${error.message}`);//th
     }
 }
 
@@ -2989,6 +3037,65 @@ const calculatePowerCurve = async (fastify, riderId, rideid) => {
     }
 }
 
+const calculateRideBoundingBoxForRideId = async (fastify, riderId, rideid) => {
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(rideid)){
+      throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    // 1. Get the ride location data
+    const result = await getRideLocationBinaryDetail(fastify, riderId, rideid);
+
+    // 2. Calculate the bounding box
+    const boundingBox = calculateRideBoundingBox(result.location);
+    if( boundingBox.minlatitude === 0 && boundingBox.minlongitude === 0 && boundingBox.maxlatitude === 0 && boundingBox.maxlongitude === 0){
+        return 0;
+    }
+
+    // 3. Upsert the bounding box data intp the rides_boundingbox table.
+    let updatesMade = 0;
+    try{
+        const query = `
+            INSERT INTO public.rides_boundingbox (
+                rideid, minlatitude, minlongitude, maxlatitude, maxlongitude, centerlatitude, centerlongitude
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (rideid)
+            DO UPDATE SET
+                minlatitude = EXCLUDED.minlatitude,
+                minlongitude = EXCLUDED.minlongitude,
+                maxlatitude = EXCLUDED.maxlatitude,
+                maxlongitude = EXCLUDED.maxlongitude,
+                centerlatitude = EXCLUDED.centerlatitude,
+                centerlongitude = EXCLUDED.centerlongitude;
+        `;
+        const params = [
+            rideid,
+            boundingBox.minlatitude,
+            boundingBox.minlongitude,
+            boundingBox.maxlatitude,
+            boundingBox.maxlongitude,
+            boundingBox.centerlatitude,
+            boundingBox.centerlongitude
+        ];
+        await fastify.pg.query(query, params);
+        updatesMade++;
+    }
+    catch(err){
+        console.error('Error in calculateRideBoundingBoxForRideId:', err);
+        return updatesMade;
+    }
+    finally{
+        return updatesMade
+    }
+}
+
 const refreshPowerCurveForYear = async (fastify, riderId, year) => {
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -3023,6 +3130,47 @@ const refreshPowerCurveForYear = async (fastify, riderId, year) => {
     let updatesMade = 0;
     for( let i = 0; i < rows.length; i++){
         await calculatePowerCurve(fastify, riderId, rows[i].rideid);
+        updatesMade++;
+    }
+    return updatesMade;
+}
+
+const calculateRideBoundingBoxForYear = async (fastify, riderId, year) => {
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(year)){
+      throw new TypeError("Invalid parameter: year must be a valid year");
+    }
+
+    let query = `
+        SELECT
+            a.rideid
+        FROM
+            rides a left outer join rides_boundingbox b
+            on a.rideid = b.rideid
+        WHERE
+            riderid = $1
+            and EXTRACT(YEAR FROM date) = $2
+            and b.rideid is null
+        ORDER BY
+            a.rideid;
+        `;
+
+    const params = [riderId, year];
+    const { rows } = await fastify.pg.query(query, params);
+
+    if(!Array.isArray(rows) || rows.length === 0){
+        throw new Error(`No rides with missing bounding box data were found for riderid: ${riderId} year: ${year}`);
+    }
+    let updatesMade = 0;
+    for( let i = 0; i < rows.length; i++){
+        await calculateRideBoundingBoxForRideId(fastify, riderId, rows[i].rideid);
         updatesMade++;
     }
     return updatesMade;
@@ -3235,6 +3383,67 @@ const rideDetailData = async (fastify, riderId, rideid) => {
     return csvData
 }
 
+const getRidesWithSimilarRoutes = async (fastify, riderId, rideid) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg
+        FROM
+            get_similar_ride_routes($1, $2);
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesWithSimilarRoutes for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesWithSimilarRoutes with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3298,9 +3507,13 @@ module.exports = {
     getReferencePowerLevels,
     getRiderPowerCurve,
     getRideMetricsBinaryDetail,
+    getRideLocationBinaryDetail,
     calculatePowerCurve,
     refreshPowerCurveForYear,
     calculatePowerCurveMultiple,
+    calculateRideBoundingBoxForRideId,
+    calculateRideBoundingBoxForYear,
     rideDetailData,
+    getRidesWithSimilarRoutes,
 };
 
