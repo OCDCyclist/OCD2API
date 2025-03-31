@@ -18,21 +18,16 @@ async function clusterRoutes(fastify, options) {
 
   fastify.get('/cluster/getRidesByCluster',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
-    const { startYear, endYear, cluster } = request.query;
+    const { clusterId, cluster } = request.query;
 
     const id = parseInt(riderId, 10);
     if (isNaN(id)) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    const start = parseInt(startYear, 10);
-    if (isNaN(start)) {
-      return reply.code(400).send({ error: 'Invalid or missing startYear' });
-    }
-
-    const end = parseInt(endYear, 10);
-    if (isNaN(end)) {
-      return reply.code(400).send({ error: 'Invalid or missing endYear' });
+    const clusterIdValue = parseInt(clusterId, 10);
+    if (isNaN(clusterIdValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing clusterId' });
     }
 
     const clusterValue = parseInt(cluster, 10);
@@ -41,15 +36,15 @@ async function clusterRoutes(fastify, options) {
     }
 
     try {
-      const result = await getRidesforCluster(fastify, id, start, end, clusterValue);
+      const result = await getRidesforCluster(fastify, id, clusterIdValue, clusterValue);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);
       }
       return reply.code(200).send(result);
     } catch (err) {
-      console.error('Database error:', err);
-      return reply.code(500).send({ error: 'Database error' });
+      console.error('Database error getRidesByCluster:', err);
+      return reply.code(500).send({ error: 'Database error getRidesByCluster' });
     }
   });
 

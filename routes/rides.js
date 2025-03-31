@@ -21,7 +21,10 @@ const {
   rideDetailData,
   calculateRideBoundingBoxForRideId,
   calculateRideBoundingBoxForYear,
+  calculatFractalDimensionForRideId,
+  calculateRideFractalDimensionForYear,
   getRidesWithSimilarRoutes,
+  getRidesWithSimilarEfforts,
 } = require('../db/dbQueries');
 const csvjson = require('csvjson');
 const { isValidYear, isValidDate } = require('../utility/general');
@@ -774,8 +777,53 @@ async function ridesRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/ride/fractalDimension/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
 
-  fastify.get('/ride/getSimilerRides/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await calculatFractalDimensionForRideId(fastify, riderId, rideidValid);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error('Database error calculating ride fractal dimension:', err);
+      return reply.code(500).send({ error: 'Database error calculating ride fractal dimension' });
+    }
+  });
+
+  fastify.get('/ride/fractalDimension/calculate/:year',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearToRefresh = parseInt(year, 10);
+    if (isNaN(yearToRefresh) || yearToRefresh < 2000 || yearToRefresh > 2100) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    try {
+      const result = await calculateRideFractalDimensionForYear(fastify, riderId, yearToRefresh);
+      return reply.code(200).send({updates: result});
+    } catch (err) {
+      console.error(`Database error updating ride bounding box for year: ${yearToRefresh}:`, err);
+      return reply.code(500).send({ error: `${err.message}` });
+    }
+  });
+
+  fastify.get('/ride/getSimilarRides/route/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
     const { rideid } = request.params;
 
@@ -792,6 +840,34 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const result = await getRidesWithSimilarRoutes(fastify, id, rideidValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ride/getSimilarRides/effort/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValue = parseInt(rideid, 10);
+
+    if( !rideidValue || rideidValue === 0 ){
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRidesWithSimilarEfforts(fastify, id, rideidValue);
 
       if (!Array.isArray(result)) {
         return reply.code(200).send([]);

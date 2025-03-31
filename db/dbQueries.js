@@ -18,6 +18,7 @@ const {roundValue} = require('../utility/numerical');
 const { decompressIntBuffer, decompressFloatBuffer } = require('../utility/compression');
 const { formatDateTimeYYYYMMDDHHmmss } = require('../utility/dates');
 const { calculateRideBoundingBox } = require('../processing/calculateRideBoundingBox');
+const { calculateRideFractalDimension } = require('../processing/calculateRideFractalDimension');
 
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
@@ -1952,7 +1953,7 @@ const getClusterCentroidDefinitions = async (fastify, riderId) =>{
     }
 }
 
-const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster) =>{
+const getRidesforCluster = async (fastify, riderId, clusterId, cluster) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
     }
@@ -1961,8 +1962,8 @@ const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster)
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    if (!isIntegerValue(startYear) || !isIntegerValue(endYear)) {
-        throw new TypeError("Invalid parameter: startYear and endYear must be an integer");
+    if (!isIntegerValue(clusterId)) {
+        throw new TypeError("Invalid parameter: clusterId must be an integer");
     }
 
     if ( !isIntegerValue(cluster)) {
@@ -1970,44 +1971,44 @@ const getRidesforCluster = async (fastify, riderId, startYear, endYear, cluster)
     }
 
     let query = `
-    SELECT
-      rideid,
-      date,
-      distance,
-      speedavg,
-      speedmax,
-      cadence,
-      hravg,
-      hrmax,
-      title,
-      poweravg,
-      powermax,
-      bikeid,
-      coalesce(bikename, 'no bike') as bikename,
-      coalesce(stravaname, 'no bike') as stravaname,
-      stravaid,
-      comment,
-      elevationgain,
-      elapsedtime,
-      powernormalized,
-      intensityfactor,
-      tss,
-      matches,
-      trainer,
-      elevationloss,
-      datenotime,
-      device_name,
-      fracdim,
-      tags,
-      calculated_weight_kg,
-      cluster,
-      hrzones,
-      powerzones,
-      cadencezones
-    FROM
-      get_rides_for_cluster($1, $2, $3, $4);
-    `;
-    const params = [riderId, startYear, endYear, cluster];
+        SELECT
+        rideid,
+        date,
+        distance,
+        speedavg,
+        speedmax,
+        cadence,
+        hravg,
+        hrmax,
+        title,
+        poweravg,
+        powermax,
+        bikeid,
+        coalesce(bikename, 'no bike') as bikename,
+        coalesce(stravaname, 'no bike') as stravaname,
+        stravaid,
+        comment,
+        elevationgain,
+        elapsedtime,
+        powernormalized,
+        intensityfactor,
+        tss,
+        matches,
+        trainer,
+        elevationloss,
+        datenotime,
+        device_name,
+        fracdim,
+        tags,
+        calculated_weight_kg,
+        cluster,
+        hrzones,
+        powerzones,
+        cadencezones
+        FROM
+            get_all_rides_for_cluster($1, $2, $3);
+        `;
+    const params = [riderId, clusterId, cluster];
 
     try {
         const { rows } = await fastify.pg.query(query, params);
@@ -3096,6 +3097,54 @@ const calculateRideBoundingBoxForRideId = async (fastify, riderId, rideid) => {
     }
 }
 
+const calculatFractalDimensionForRideId = async (fastify, riderId, rideid) => {
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(rideid)){
+      throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    // 1. Get the ride location data
+    const result = await getRideLocationBinaryDetail(fastify, riderId, rideid);
+
+    // 2. Calculate the fractal dimension
+    const fractalDimension = roundValue(calculateRideFractalDimension(result.location), 4);
+
+    // 3. Update the fractal dimension field in the rides table.
+    let updatesMade = 0;
+    try{
+        const query = `
+            UPDATE
+                rides
+            SET
+                fracDim = $3
+            WHERE
+                riderid = $1
+                AND rideid = $2;
+        `;
+        const params = [
+            riderId,
+            rideid,
+            fractalDimension
+        ];
+        await fastify.pg.query(query, params);
+        updatesMade++;
+    }
+    catch(err){
+        console.error('Error in calculatFractalDimensionForRideId:', err);
+        return updatesMade;
+    }
+    finally{
+        return updatesMade
+    }
+}
+
 const refreshPowerCurveForYear = async (fastify, riderId, year) => {
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -3171,6 +3220,46 @@ const calculateRideBoundingBoxForYear = async (fastify, riderId, year) => {
     let updatesMade = 0;
     for( let i = 0; i < rows.length; i++){
         await calculateRideBoundingBoxForRideId(fastify, riderId, rows[i].rideid);
+        updatesMade++;
+    }
+    return updatesMade;
+}
+
+const calculateRideFractalDimensionForYear = async (fastify, riderId, year) => {
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(year)){
+      throw new TypeError("Invalid parameter: year must be a valid year");
+    }
+
+    let query = `
+        SELECT
+            rideid
+        FROM
+            rides
+        WHERE
+            riderid = $1
+            and EXTRACT(YEAR FROM date) = $2
+            and fracDim = 0.0 or fracDim is null
+        ORDER BY
+            rideid;
+     `;
+
+    const params = [riderId, year];
+    const { rows } = await fastify.pg.query(query, params);
+
+    if(!Array.isArray(rows) || rows.length === 0){
+        throw new Error(`No rides with missing fractal dimension were found for riderid: ${riderId} year: ${year}`);
+    }
+    let updatesMade = 0;
+    for( let i = 0; i < rows.length; i++){
+        await calculatFractalDimensionForRideId(fastify, riderId, rows[i].rideid);
         updatesMade++;
     }
     return updatesMade;
@@ -3444,6 +3533,67 @@ const getRidesWithSimilarRoutes = async (fastify, riderId, rideid) =>{
     }
 }
 
+const getRidesWithSimilarEfforts = async (fastify, riderId, rideid) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg
+        FROM
+            get_similar_ride_efforts($1, $2);
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRidesWithSimilarRoutes for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesWithSimilarRoutes with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3512,8 +3662,11 @@ module.exports = {
     refreshPowerCurveForYear,
     calculatePowerCurveMultiple,
     calculateRideBoundingBoxForRideId,
+    calculatFractalDimensionForRideId,
     calculateRideBoundingBoxForYear,
+    calculateRideFractalDimensionForYear,
     rideDetailData,
     getRidesWithSimilarRoutes,
+    getRidesWithSimilarEfforts,
 };
 
