@@ -225,7 +225,6 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   logger.info("SIGTERM received. Shutting down...");
-  console.log("SIGTERM received. Shutting down...");
   await shutdownWorker();
   process.exit(0);
 });

@@ -117,8 +117,8 @@ async function stravaRoutes(fastify, options) {
             try{
                 for( let i = 0; i < ridesAdded.length; i++){
                     const ride = ridesAdded[i];
-                    await calculateRideBoundingBoxForRideId(fastify, riderId, ride.id);
-                    logDetailMessage('processRideBoundingBox', 'ride', ride.id);
+                    await calculateRideBoundingBoxForRideId(fastify, riderId, ride.rideid);
+                    logDetailMessage('processRideBoundingBox', 'ride', ride.rideid);
                 }
             }
             catch (databaseError) {

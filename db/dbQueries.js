@@ -606,7 +606,7 @@ const getWeightPeriodData = async (fastify, riderId, period) =>{
             weight30,
             weight365,
             bodyfatfraction,
-            bodyfatfraction7
+            bodyfatfraction7,
             bodyfatfraction30,
             bodyfatfraction365,
             bodyh2ofraction,
@@ -3594,6 +3594,39 @@ const getRidesWithSimilarEfforts = async (fastify, riderId, rideid) =>{
     }
 }
 
+const getMilestoness_TenK = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            ride_date,
+            distance_miles
+        FROM
+            get_rider_distance_milestones($1)
+        ORDER BY
+            ride_date;
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getMilestoness_TenK for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getMilestoness_TenK with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3668,5 +3701,6 @@ module.exports = {
     rideDetailData,
     getRidesWithSimilarRoutes,
     getRidesWithSimilarEfforts,
+    getMilestoness_TenK,
 };
 

@@ -21,11 +21,29 @@ function toCartesianCoords(route) {
  * @param {Array} route - Array of latitude and longitude values (array of arrays)
  * @returns {number} fractal dimension of the ride. E.g. 1.0 for straight line, 1.2-1.3 for a road, 1.6-1.7 for a mountain bike trail.
  */
-function calculateRideFractalDimension(route, boxSizes = [1, 2, 3, 4, 5, 10, 20, 50, 100, 200]) {
+function calculateRideFractalDimension(route, boxSizes = [5, 10, 20, 50, 100, 200, 500, 1000]) {
     if (!Array.isArray(route) || route.length === 0) {
         return 1.0;
     }
-    const cartesianRoute = toCartesianCoords(route);
+
+    const testRide = [
+        [34.0522, -118.2437],  // Start
+        [34.0530, -118.2420],
+        [34.0545, -118.2405],
+        [34.0560, -118.2390],
+        [34.0572, -118.2400],
+        [34.0578, -118.2425],
+        [34.0575, -118.2445],
+        [34.0560, -118.2460],
+        [34.0542, -118.2472],
+        [34.0525, -118.2465],
+        [34.0510, -118.2450],
+        [34.0505, -118.2435],
+        [34.0515, -118.2420],
+        [34.0522, -118.2437]   // Back to start (Closed loop)
+    ];
+
+    const cartesianRoute = toCartesianCoords(testRide);
 
     const logEps = [];
     const logN = [];
@@ -39,7 +57,7 @@ function calculateRideFractalDimension(route, boxSizes = [1, 2, 3, 4, 5, 10, 20,
             occupiedBoxes.add(`${boxX},${boxY}`);
         }
 
-        logEps.push(Math.log(1 / boxSize));
+        logEps.push(Math.log(boxSize)); // Corrected from Math.log(1 / boxSize)
         logN.push(Math.log(occupiedBoxes.size));
     }
 
