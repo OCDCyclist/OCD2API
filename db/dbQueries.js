@@ -1257,6 +1257,75 @@ const getRidesByDateRange = async (fastify, riderId, startDate, endDate) =>{
     }
 }
 
+const getRidesByYearTrainer = async (fastify, riderId, year, trainer) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(year)) {
+        throw new TypeError("Invalid parameter: year must be an integer");
+    }
+
+    if ( typeof(trainer) !== 'boolean') {
+        throw new TypeError("Invalid parameter: trainer must be a boolean");
+    }
+
+    const params = [riderId, year, trainer];
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
+        FROM
+            get_rides_by_year_trainer($1, $2, $3)
+        `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Database error fetching getRidesByYearDOW with riderId ${riderId} year ${year} dow ${dow}: ${error.message}`);//th
+    } catch (error) {
+        throw new Error(`Database error fetching getRidesByYearDOW with riderId ${riderId} year ${year} dow ${dow}: ${error.message}`);//th
+    }
+}
+
 const getRideById = async (fastify, riderId, rideid) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -1352,7 +1421,8 @@ const getSegmentEffortsByRideID = async (fastify, riderId, rideid) =>{
             name,
             climb_category,
             effort_count,
-            rank
+            rank,
+            id
         FROM
             get_ride_segment_efforts($1, $2);
     `;
@@ -3627,6 +3697,43 @@ const getMilestoness_TenK = async (fastify, riderId) =>{
     }
 }
 
+const getOutdoorIndoor = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            year,
+            distance_outdoor,
+            distance_indoor,
+            total_distance,
+            pct_outdoor,
+            pct_indoor
+        FROM
+            get_yearly_trainer_distance_summary($1)
+        ORDER BY
+            year desc;
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_yearly_trainer_distance_summary for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching get_yearly_trainer_distance_summary with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3655,6 +3762,7 @@ module.exports = {
     getRidesByDOMMonth,
     getRidesByDateRange,
     getRidesforCluster,
+    getRidesByYearTrainer,
     getRideById,
     getSegmentEffortsByRideID,
     getRideByIdQuery,
@@ -3702,5 +3810,6 @@ module.exports = {
     getRidesWithSimilarRoutes,
     getRidesWithSimilarEfforts,
     getMilestoness_TenK,
+    getOutdoorIndoor,
 };
 

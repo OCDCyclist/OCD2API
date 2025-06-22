@@ -25,9 +25,11 @@ const {
   calculateRideFractalDimensionForYear,
   getRidesWithSimilarRoutes,
   getRidesWithSimilarEfforts,
+  getRidesByYearTrainer,
 } = require('../db/dbQueries');
 const csvjson = require('csvjson');
 const { isValidYear, isValidDate } = require('../utility/general');
+const { parseBoolean } = require('../utility/general');
 
 async function ridesRoutes(fastify, options) {
 
@@ -270,6 +272,36 @@ async function ridesRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error' });
     }
   });
+
+  fastify.get('/ride/ridesByYearTrainer',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { year } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearValue = parseInt(year, 10);
+    if (isNaN(yearValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    const trainer = parseBoolean(request.query.trainer);
+
+    try {
+      const result = await getRidesByYearTrainer(fastify, id, yearValue, trainer);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error:', err);
+      return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
 
   fastify.get('/ride/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification

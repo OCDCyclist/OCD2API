@@ -87,4 +87,14 @@ const DEFAULT_ZONES = {
     Cadence: "60,70,80,90,100"
   };
 
-module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear, logMessage, logDetailMessage, POWER_CURVE_INTERVALS, DEFAULT_ZONES };
+function parseBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const lower = value.trim().toLowerCase();
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
+  }
+  return undefined
+}
+
+module.exports = { isEmpty, isFastify, isRiderId, isSegmentId, isLocationId, isAssignmentId, isValidDate, isValidTagArray, isValidNumber, isIntegerValue, isValidRideArray, isValidYear, logMessage, logDetailMessage, POWER_CURVE_INTERVALS, DEFAULT_ZONES, parseBoolean };

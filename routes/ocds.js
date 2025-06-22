@@ -6,7 +6,9 @@ const {
   getStreaks_1_day,
   getStreaks_7days200,
   getMilestoness_TenK,
+  getOutdoorIndoor,
 } = require('../db/dbQueries');
+const { parseBoolean } = require('../utility/general');
 
 async function ocdRoutes(fastify, options) {
   // Define the dashboard route
@@ -163,6 +165,28 @@ async function ocdRoutes(fastify, options) {
   } catch (err) {
       console.error('Database error milestones TenK:', err);
       return reply.code(500).send({ error: 'Database error milestones TenK' });
+    }
+  });
+
+  fastify.get('/ocds/outdoorindoor',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getOutdoorIndoor(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error outdoorindoor:', err);
+      return reply.code(500).send({ error: 'Database error outdoorindoor' });
     }
   });
 }
