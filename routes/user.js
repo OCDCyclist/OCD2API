@@ -356,6 +356,39 @@ async function userRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/user/settings',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    let query = `
+        Select
+          riderid,
+          property,
+          date,
+          propertyvaluestring,
+          propertyvalue
+        from
+          riderpropertyvalues
+        where
+          riderid = $1
+        order by
+          property,
+          date;`;
+
+    const params = [riderId];
+
+    try {
+      const { rows } = await fastify.pg.query(query, params);
+      return reply.code(200).send(rows);
+    } catch (err) {
+      console.error('Database error retrieving settings:', err);
+      return reply.code(500).send({ error: 'Database error retrieving settings' });
+    }
+  });
 }
 
 module.exports = userRoutes;
