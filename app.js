@@ -84,6 +84,7 @@ fastify.register(require('./routes/reference'));
 fastify.register(require('./routes/segments'));
 fastify.register(require('./routes/strava'));
 fastify.register(require('./routes/user'));
+fastify.register(require('./routes/gear'));
 
 // Expose a route to generate JWT token (for testing purposes)
 fastify.post('/token', (request, reply) => {

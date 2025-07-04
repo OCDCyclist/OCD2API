@@ -389,6 +389,37 @@ async function userRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error retrieving settings' });
     }
   });
+
+  fastify.post('/user/addUserSettingValue', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { property, value } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const insertDate = new Date().toISOString().slice(0, 10);
+    const query = `
+      INSERT INTO riderpropertyvalues (riderid, property, propertyvalue, propertyvaluestring, date)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *`;
+
+    let params;
+    if (value === null || value === '' || isNaN(Number(value))) {
+      params = [riderId, property, null, value, insertDate];
+    } else {
+      params = [riderId, property, Number(value), null, insertDate];
+    }
+
+    try {
+      const { rows } = await fastify.pg.query(query, params);
+      return rows.length > 0 ? reply.code(200).send(rows[0]) :  null;
+    } catch (err) {
+      console.error('Database error addUserSettingValue:', err);
+      return reply.code(500).send({ error: 'Database error addUserSettingValue' });
+    }
+  });
 }
 
 module.exports = userRoutes;
