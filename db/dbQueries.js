@@ -3734,6 +3734,41 @@ const getOutdoorIndoor = async (fastify, riderId) =>{
     }
 }
 
+const getRideDayFractions = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        Select
+            year_month,
+            ride_days_count,
+            days_in_month,
+            fraction_of_days_with_rides
+        from
+            get_rider_ride_day_fractions($1)
+        Order by
+            year_month desc;
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for getRideDayFractions for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching getRideDayFractions with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3811,5 +3846,6 @@ module.exports = {
     getRidesWithSimilarEfforts,
     getMilestoness_TenK,
     getOutdoorIndoor,
+    getRideDayFractions,
 };
 

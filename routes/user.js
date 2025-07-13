@@ -420,6 +420,108 @@ async function userRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error addUserSettingValue' });
     }
   });
+
+  fastify.get('/user/goals',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    let query = `
+      Select
+        ridergoalid,
+        goalid,
+        case when goalid = 0 then 'distance'  when goalid = 1 then 'time' else 'unknown' end as type,
+        week,
+        month,
+        year
+      from
+        ridergoals
+      where
+        riderid = $1
+      order by
+        goalid;
+    `;
+
+    const params = [riderId];
+
+    try {
+      const { rows } = await fastify.pg.query(query, params);
+      return reply.code(200).send(rows);
+    } catch (err) {
+      console.error('Database error retrieving goals:', err);
+      return reply.code(500).send({ error: 'Database error retrieving goals' });
+    }
+  });
+
+  fastify.post('/user/addUpdateGoal', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const {
+      ridergoalid,
+      goalid,
+      week,
+      month,
+      year
+    } = request.body;
+
+    if( typeof goalid !== 'number' || goalid < 0) {
+      return reply.code(400).send({ error: 'Invalid goalid' });
+    }
+
+    if( typeof week !== 'number' || week < 0) {
+      return reply.code(400).send({ error: 'Invalid week value' });
+    }
+
+    if( typeof month !== 'number' || month < 0) {
+      return reply.code(400).send({ error: 'Invalid month value' });
+    }
+
+    if( typeof year !== 'number' || year < 0) {
+      return reply.code(400).send({ error: 'Invalid year value' });
+    }
+
+    const client = await fastify.pg.connect();
+    try {
+      await client.query('BEGIN');
+
+      let result;
+      if (ridergoalid > 0) {
+        // Update existing
+        result = await client.query(
+          `UPDATE ridergoals
+          SET goalid = $2, week = $3, month = $4, year = $5
+          WHERE ridergoalid = $1 AND riderid = $6
+          RETURNING *`,
+          [ridergoalid, goalid, week, month, year, riderId]
+        );
+      } else {
+        // Insert new
+        result = await client.query(
+          `INSERT INTO ridergoals ([goalid, week, month, year, riderId)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *`,
+          [goalid, week, month, year, riderId]
+        );
+      }
+
+      await client.query('COMMIT');
+      return reply.send(result.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to upsert ridergoals' });
+    } finally {
+      client.release();
+    }
+  });
 }
 
 module.exports = userRoutes;

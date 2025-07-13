@@ -103,6 +103,9 @@ function startWorker() {
         database: process.env.OCD_DB_NAME,
         password: process.env.OCD_DB_PASSWORD,
         port: process.env.OCD_DB_PORT,
+        ssl: {
+          rejectUnauthorized: false
+        }
       },
     },
   });

@@ -7,6 +7,7 @@ const {
   getStreaks_7days200,
   getMilestoness_TenK,
   getOutdoorIndoor,
+  getRideDayFractions,
 } = require('../db/dbQueries');
 const { parseBoolean } = require('../utility/general');
 
@@ -189,6 +190,29 @@ async function ocdRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error outdoorindoor' });
     }
   });
+
+  fastify.get('/ocds/ridedayfractions',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getRideDayFractions(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error ridedayfractions:', err);
+      return reply.code(500).send({ error: 'Database error ridedayfractions' });
+    }
+  });
+
 }
 
 module.exports = ocdRoutes;
