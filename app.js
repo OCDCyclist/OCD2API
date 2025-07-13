@@ -162,9 +162,9 @@ async function shutdownWorker() {
 // Start server
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000, host: '0.0.0.0' });
-    console.log('Server is running on http://localhost:3000');
-    logger.info('Server is running on http://localhost:3000');
+    await fastify.listen({ port: 8080, host: '0.0.0.0' });
+    console.log('Server is running on http://localhost:8080');
+    logger.info('Server is running on http://localhost:8080');
     startWorker();
 
   } catch (err) {

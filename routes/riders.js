@@ -12,7 +12,7 @@ async function ridersRoutes(fastify, options) {
         Postman example:
         Method: POST
 
-        URL: http://localhost:3000/riders/register
+        URL: http://localhost:8080/riders/register
 
         Body: (Choose raw and JSON format)
 
@@ -90,7 +90,7 @@ async function ridersRoutes(fastify, options) {
     /*
         Method: POST
 
-        URL: http://localhost:3000/riders/login
+        URL: http://localhost:8080/riders/login
 
         Body: (Choose raw and JSON format)
 
@@ -149,7 +149,7 @@ async function ridersRoutes(fastify, options) {
     /*
         Method: PUT
 
-        URL: http://localhost:3000/riders/1/password
+        URL: http://localhost:8080/riders/1/password
 
         Headers:
 
