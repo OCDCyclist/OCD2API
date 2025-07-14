@@ -38,20 +38,19 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Register CORS plugin
 fastify.register(require('@fastify/cors'), {
-  logger: {
-    stream: {
-      write: (message) => logger.info(message.trim()),
-    },
-  },
   origin: (origin, cb) => {
-    const allowedOrigins = ['http://localhost:5173'];  // Update this to your frontend origin
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'https://ocdui-y787t.ondigitalocean.app'
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
       cb(null, true);
-      return;
+    } else {
+      cb(new Error('Not allowed by CORS'), false);
     }
-    cb(new Error('Not allowed'), false);
   },
-  credentials: true // Allow credentials (optional, if required)
+  credentials: false, // Only set to true if you use cookies (not needed for JWT in headers)
+  allowedHeaders: ['Content-Type', 'Authorization'],
 });
 
 // Register JWT plugin
