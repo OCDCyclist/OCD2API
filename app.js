@@ -121,7 +121,7 @@ function startWorker() {
     console.log(`Worker exited with code: ${code}`);
     if (!shuttingDown) {
       console.log("Restarting worker...");
-      startWorker(); // Restart worker if it exits unexpectedly
+      //startWorker(); // Restart worker if it exits unexpectedly
     }
   });
 
