@@ -11,6 +11,8 @@ const { getFirstSegmentEffortDate,
         getStravaIdForRideId,
         getRideIdForMostRecentMissingStreams,
         calculateRideBoundingBoxForRideId,
+        updateCummulatives,
+        updateFFFMetrics,
 } = require('../db/dbQueries');
 const { getStravaCredentials,
         getStravaTokens,
@@ -34,6 +36,15 @@ const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
 const STRAVA_REDIRECT_URI = process.env.STRAVA_REDIRECT_URI;
 
 const defaultBikeId = 2581;
+
+function getYesterdayDateString() {
+    const today = new Date();
+    today.setDate(today.getDate() - 1);
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 async function stravaRoutes(fastify, options) {
     fastify.get('/rider/updateStrava', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -76,6 +87,8 @@ async function stravaRoutes(fastify, options) {
             }
 
             // Then retrieve the streams for the ride(s), write to file, and insert file name into database.
+            // TO DO: write files to digital ocean "S3" bucket.
+            /*
             try{
                 for( let i = 0; i < ridesAdded.length; i++){
                     const ride = ridesAdded[i];
@@ -87,16 +100,32 @@ async function stravaRoutes(fastify, options) {
             catch (databaseError) {
                 console.error('Error updating segment efforts', databaseError);
             }
-
+            */
             try {
-                // this updates ride metrics like intensity factor, TSS.  This call takes a long time to run.
+                // this updates ride metrics like intensity factor, TSS.  This call should be fast now
                 if(ridesAdded.length > 0){
                     const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
                     await fastify.pg.query(updaterideMetrics, [riderId]);
                     logDetailMessage('updaterideMetrics', 'rider', riderId);
+
                 }
             } catch (updateError) {
                 console.error('Error updating ride metrics', updateError);
+            }
+
+            try {
+                // this updates cummulatives
+                const dateToUse = getYesterdayDateString();
+
+                const [cummulativesOk, fffOk] = await Promise.all([
+                    updateCummulatives(fastify, riderId, dateToUse),
+                    updateFFFMetrics(fastify, riderId, dateToUse)
+                ]);
+                logDetailMessage('updateCummulatives', 'dateToUse', cummulativesOk);
+                logDetailMessage('updateFFFMetrics', 'dateToUse', fffOk);
+
+            } catch (updateError) {
+                console.error('Error updating cummulatives', updateError);
             }
 
             // This updates the default cluster for the riderId

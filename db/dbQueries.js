@@ -19,6 +19,7 @@ const { decompressIntBuffer, decompressFloatBuffer } = require('../utility/compr
 const { formatDateTimeYYYYMMDDHHmmss } = require('../utility/dates');
 const { calculateRideBoundingBox } = require('../processing/calculateRideBoundingBox');
 const { calculateRideFractalDimension } = require('../processing/calculateRideFractalDimension');
+const { addDays, formatISO, parseISO } = require('date-fns');
 
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
@@ -3769,6 +3770,242 @@ const getRideDayFractions = async (fastify, riderId) =>{
     }
 }
 
+function createLocalDateFromYMD(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day); // month is zero-based
+}
+
+const updateCummulatives = async (fastify, riderId, parsedDate) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    // Date validation
+    if ( !parsedDate ) {
+      return reply.status(400).send({ error: 'parsedDate value is not provided' });
+    }
+
+    try {
+      const start = parseISO(parsedDate);
+      const today = new Date();
+      const end = addDays(today, 3);
+
+      // Step 1: Ensure cummulatives entries exist from today and 3 days into the future.
+      const datesToEnsure = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        datesToEnsure.push(d.toISOString().slice(0, 10));
+      }
+
+      const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(', ');
+      await fastify.pg.query(`
+        INSERT INTO cummulatives (riderid, ride_date)
+        VALUES ${placeholders}
+        ON CONFLICT DO NOTHING
+      `, [riderId, ...datesToEnsure]);
+
+      // Step 2: Recalculate summaries for each date
+      for (const dateStr of datesToEnsure) {
+        const date = createLocalDateFromYMD(dateStr);
+        const upUntilDate = addDays(date, 1);
+
+        const [daily, d7, d30, d365, all] = await Promise.all([
+            aggregate(fastify, riderId, date, upUntilDate, 2),
+            aggregate(fastify, riderId, addDays(date, -6), upUntilDate, 1),
+            aggregate(fastify, riderId, addDays(date, -29), upUntilDate, 0),
+            aggregate(fastify, riderId, addDays(date, -364), upUntilDate, 0),
+            aggregate(fastify, riderId, null, upUntilDate, 0)
+        ]);
+
+        await fastify.pg.query(`
+          UPDATE cummulatives SET
+            moving_total_distance1 = $1,
+            moving_total_elevationgain1 = $2,
+            moving_total_elapsedtime1 = $3,
+            moving_hr_average1 = $4,
+            moving_power_average1 = $5,
+
+            moving_total_distance7 = $6,
+            moving_total_elevationgain7 = $7,
+            moving_total_elapsedtime7 = $8,
+            moving_hr_average7 = $9,
+            moving_power_average7 = $10,
+
+            moving_total_distance30 = $11,
+            moving_total_elevationgain30 = $12,
+            moving_total_elapsedtime30 = $13,
+            moving_hr_average30 = $14,
+            moving_power_average30 = $15,
+
+            moving_total_distance365 = $16,
+            moving_total_elevationgain365 = $17,
+            moving_total_elapsedtime365 = $18,
+            moving_hr_average365 = $19,
+            moving_power_average365 = $20,
+
+            moving_total_distancealltime = $21,
+            moving_total_elevationgainalltime = $22,
+            moving_total_elapsedtimealltime = $23,
+            moving_hr_averagealltime = $24,
+            moving_power_averagealltime = $25,
+
+            insertdttm = CURRENT_TIMESTAMP
+          WHERE riderid = $26 AND ride_date = $27
+          `, [
+          ...daily, ...d7, ...d30, ...d365, ...all,
+          riderId,
+          date
+        ]);
+      }
+
+      return true;
+    } catch (err) {
+      console.log(`Failed to update cummulatives: ${err}`)
+      return false;
+    }
+}
+
+const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
+  if (!isFastify(fastify)) {
+    throw new TypeError("Invalid parameter: fastify must be provided");
+  }
+
+  if (!isRiderId(riderId)) {
+    throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
+
+  if (!parsedDate) {
+    console.log('parsedDate value is not provided');
+    return false;
+  }
+
+  try {
+    const start = parseISO(parsedDate);
+    const today = new Date();
+    const end = addDays(today, 3);
+
+    // Ensure dates exist in cummulatives
+    const datesToEnsure = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      datesToEnsure.push(d.toISOString().slice(0, 10));
+    }
+
+    const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(', ');
+    await fastify.pg.query(`
+      INSERT INTO cummulatives (riderid, ride_date)
+      VALUES ${placeholders}
+      ON CONFLICT DO NOTHING
+    `, [riderId, ...datesToEnsure]);
+
+    // Now, for each date, run a query that calculates and updates fatigue, fitness, form, and tss30
+    for (const dateStr of datesToEnsure) {
+      const date = createLocalDateFromYMD(dateStr); // e.g. 2025-07-27
+
+      await fastify.pg.query(
+        `
+        WITH metrics AS (
+          SELECT
+            riderid,
+            ride_date,
+            ROUND(SUM(total_tss) OVER (
+              PARTITION BY riderid ORDER BY ride_date
+              ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+            ) / 7.0, 0) AS fatigue,
+
+            ROUND(SUM(total_tss) OVER (
+              PARTITION BY riderid ORDER BY ride_date
+              ROWS BETWEEN 41 PRECEDING AND CURRENT ROW
+            ) / 42.0, 0) AS fitness,
+
+            ROUND(
+              SUM(total_tss) OVER (
+                PARTITION BY riderid ORDER BY ride_date
+                ROWS BETWEEN 41 PRECEDING AND CURRENT ROW
+              ) / 42.0 -
+              SUM(total_tss) OVER (
+                PARTITION BY riderid ORDER BY ride_date
+                ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+              ) / 7.0, 0
+            ) AS form,
+
+            ROUND(SUM(total_tss) OVER (
+              PARTITION BY riderid ORDER BY ride_date
+              ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+            ) / 30.0, 0) AS tss30
+          FROM cummulatives
+          WHERE riderid = $1
+        )
+        UPDATE cummulatives AS c
+        SET
+          fatigue = m.fatigue,
+          fitness = m.fitness,
+          form = m.form,
+          tss30 = m.tss30,
+          insertdttm = CURRENT_TIMESTAMP
+        FROM metrics m
+        WHERE c.riderid = m.riderid
+          AND c.ride_date = m.ride_date
+          AND c.riderid = $1
+          AND c.ride_date = $2::date
+        `,
+        [riderId, date]
+      );
+    }
+
+    return true;
+  } catch (err) {
+    console.error(`Failed to update FFF metrics: ${err}`);
+    return false;
+  }
+};
+
+async function aggregate(fastify, riderId, start, end, timeRounding) {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if (!Number.isInteger(timeRounding)) {
+        throw new TypeError("Invalid parameter: timeRounding must be an integer");
+    }
+
+    const result = await fastify.pg.query(
+        `
+        SELECT
+            COALESCE(ROUND(SUM(distance),1), 0) AS distance,
+            COALESCE(ROUND(SUM(elevationgain),0), 0) AS elevationgain,
+            COALESCE(ROUND(SUM(elapsedtime)/3600.0, $4), 0) AS elapsedtime,
+            COALESCE(ROUND(AVG(hravg), 0), 0) AS hravg,
+            COALESCE(ROUND(AVG(poweravg), 0), 0) AS poweravg
+        FROM rides
+        WHERE riderid = $1
+            AND date >= $2::date
+            AND date < $3::date
+        `,
+        [
+            riderId,
+            start ? start.toISOString().slice(0, 10) : '1900-01-01',
+            end,
+            timeRounding
+        ]
+    );
+
+    const r = result.rows[0];
+    return [
+        r.distance,
+        r.elevationgain,
+        r.elapsedtime,
+        r.hravg,
+        r.poweravg,
+    ];
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -3847,5 +4084,7 @@ module.exports = {
     getMilestoness_TenK,
     getOutdoorIndoor,
     getRideDayFractions,
+    updateCummulatives,
+    updateFFFMetrics,
 };
 

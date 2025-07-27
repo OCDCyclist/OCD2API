@@ -8,6 +8,8 @@ const {
   getMilestoness_TenK,
   getOutdoorIndoor,
   getRideDayFractions,
+  updateCummulatives,
+  updateFFFMetrics,
 } = require('../db/dbQueries');
 const { parseBoolean } = require('../utility/general');
 
@@ -213,6 +215,32 @@ async function ocdRoutes(fastify, options) {
     }
   });
 
+  fastify.post('/ocds/refresh/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { date } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    // Date validation
+    if ( !date ) {
+      return reply.status(400).send({ error: 'Date value is not provided' });
+    }
+
+    try {
+      const [cummulativesOk, fffOk] = await Promise.all([
+        updateCummulatives(fastify, riderId, date),
+        updateFFFMetrics(fastify, riderId, date)
+      ]);
+
+      return reply.code(200).send( { "cummulativesOk": cummulativesOk, "fffOk":  fffOk} );
+    } catch (err) {
+      console.error('Error processing cummulatives:', err);
+      return reply.code(500).send({ error: `Error processing cummulatives: ${err}` });
+    }
+  });
 }
 
 module.exports = ocdRoutes;
