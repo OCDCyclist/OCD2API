@@ -3962,6 +3962,78 @@ const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
   }
 };
 
+const updateRuns = async (fastify, riderId, parsedDate) => {
+  if (!isFastify(fastify)) {
+    throw new TypeError("Invalid parameter: fastify must be provided");
+  }
+
+  if (!isRiderId(riderId)) {
+    throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
+
+  if (!parsedDate) {
+    return { error: 'parsedDate value is not provided' };
+  }
+
+  try {
+    const start = parseISO(parsedDate);
+    const today = new Date();
+    const end = addDays(today, 3);
+
+    const datesToProcess = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      datesToProcess.push(d.toISOString().slice(0, 10));
+    }
+
+    const placeholders = datesToProcess.map((_, i) => `($1, $${i + 2})`).join(', ');
+    await fastify.pg.query(`
+      INSERT INTO cummulatives (riderid, ride_date)
+      VALUES ${placeholders}
+      ON CONFLICT DO NOTHING
+    `, [riderId, ...datesToProcess]);
+
+    for (const dateStr of datesToProcess) {
+      const currentDate = createLocalDateFromYMD(dateStr);
+      const prevDate = addDays(currentDate, -1);
+      const upUntilCurrent = addDays(currentDate, 1);
+
+      const [daily, d7] = await Promise.all([
+        aggregate(fastify, riderId, currentDate, upUntilCurrent, 2),
+        aggregate(fastify, riderId, addDays(currentDate, -6), upUntilCurrent, 1)
+      ]);
+
+      const moving_total_distance1 = daily[0]; // assumed index
+      const moving_total_distance7 = d7[0];    // assumed index
+
+      // Get previous day's values
+      const { rows: prevRows } = await fastify.pg.query(`
+        SELECT runconsecutivedays, run7days200
+        FROM cummulatives
+        WHERE riderid = $1 AND ride_date = $2
+      `, [riderId, prevDate]);
+
+      const prevRunConsec = prevRows[0]?.runconsecutivedays ?? 0;
+      const prevRun7 = prevRows[0]?.run7days200 ?? 0;
+
+      const newRunConsec = (moving_total_distance1 > 0.0) ? prevRunConsec + 1 : 0;
+      const newRun7 = (moving_total_distance7 > 200.0) ? prevRun7 + 1 : 0;
+
+      await fastify.pg.query(`
+        UPDATE cummulatives SET
+          runconsecutivedays = $1,
+          run7days200 = $2,
+          insertdttm = CURRENT_TIMESTAMP
+        WHERE riderid = $3 AND ride_date = $4
+      `, [newRunConsec, newRun7, riderId, currentDate]);
+    }
+
+    return true;
+  } catch (err) {
+    console.error(`Failed to update runs: ${err}`);
+    return false;
+  }
+};
+
 async function aggregate(fastify, riderId, start, end, timeRounding) {
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -4086,5 +4158,6 @@ module.exports = {
     getRideDayFractions,
     updateCummulatives,
     updateFFFMetrics,
+    updateRuns,
 };
 

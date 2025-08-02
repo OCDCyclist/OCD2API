@@ -13,6 +13,7 @@ const { getFirstSegmentEffortDate,
         calculateRideBoundingBoxForRideId,
         updateCummulatives,
         updateFFFMetrics,
+        updateRuns,
 } = require('../db/dbQueries');
 const { getStravaCredentials,
         getStravaTokens,
@@ -119,7 +120,8 @@ async function stravaRoutes(fastify, options) {
 
                 const [cummulativesOk, fffOk] = await Promise.all([
                     updateCummulatives(fastify, riderId, dateToUse),
-                    updateFFFMetrics(fastify, riderId, dateToUse)
+                    updateFFFMetrics(fastify, riderId, dateToUse),
+                    updateRuns(fastify, riderId, dateToUse)
                 ]);
                 logDetailMessage('updateCummulatives', 'dateToUse', cummulativesOk);
                 logDetailMessage('updateFFFMetrics', 'dateToUse', fffOk);

@@ -10,6 +10,7 @@ const {
   getRideDayFractions,
   updateCummulatives,
   updateFFFMetrics,
+  updateRuns
 } = require('../db/dbQueries');
 const { parseBoolean } = require('../utility/general');
 
@@ -232,7 +233,8 @@ async function ocdRoutes(fastify, options) {
     try {
       const [cummulativesOk, fffOk] = await Promise.all([
         updateCummulatives(fastify, riderId, date),
-        updateFFFMetrics(fastify, riderId, date)
+        updateFFFMetrics(fastify, riderId, date),
+        updateRuns(fastify, riderId, date)
       ]);
 
       return reply.code(200).send( { "cummulativesOk": cummulativesOk, "fffOk":  fffOk} );
