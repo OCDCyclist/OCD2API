@@ -21,6 +21,8 @@ async function writeActivityFile(riderId, rideid, stravaId, data) {
   }
 }
 
+
+
 function getSortedPropertyNames(obj) {
   if (typeof obj !== 'object' || obj === null) {
       return '';

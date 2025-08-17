@@ -30,6 +30,7 @@ const { getStravaRecentRides,
         getStravaSegmentEffortsForRider,
 } = require('../db/stravaRideData');
 const { clusterRides } = require('../utility/clustering');
+const { writeActivityFileToBucket } = require('../utility/bucketUtilities');
 const { logDetailMessage } = require("../utility/general");
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
@@ -88,8 +89,7 @@ async function stravaRoutes(fastify, options) {
             }
 
             // Then retrieve the streams for the ride(s), write to file, and insert file name into database.
-            // TO DO: write files to digital ocean "S3" bucket.
-            /*
+            // Write files to digital ocean S3 compatible bucket.
             try{
                 for( let i = 0; i < ridesAdded.length; i++){
                     const ride = ridesAdded[i];
@@ -101,7 +101,6 @@ async function stravaRoutes(fastify, options) {
             catch (databaseError) {
                 console.error('Error updating segment efforts', databaseError);
             }
-            */
             try {
                 // this updates ride metrics like intensity factor, TSS.  This call should be fast now
                 if(ridesAdded.length > 0){
@@ -278,6 +277,42 @@ async function stravaRoutes(fastify, options) {
 
         reply.send(stravaRideDetail);
     });
+
+     fastify.get('/rider/writeActivityStreams/:stravaid', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;  // request.user is populated after JWT verification
+        const { stravaid } = request.params;
+
+        const id = parseInt(riderId, 10);
+        if (isNaN(id)) {
+          return reply.code(400).send({ error: 'Invalid or missing riderId' });
+        }
+
+        const stravaidNumber = parseInt(stravaid, 10);
+        if (isNaN(stravaidNumber)) {
+          return reply.code(400).send({ error: 'Invalid or missing stravaid' });
+        }
+
+        const stravaCredentials = await getStravaCredentials(fastify);
+        let tokens = await getStravaTokens(fastify, riderId);
+
+        if (isStravaTokenExpired(tokens)) {
+          tokens.accesstoken = await refreshStravaToken(fastify, riderId, tokens.refreshtoken, stravaCredentials.clientid, stravaCredentials.clientsecret);
+        }
+
+        let rideid = -1;
+        const result = await fastify.pg.query('SELECT rideid FROM rides WHERE riderid = $1 AND stravaid = $2', [riderId, stravaid]);
+        if(result && result.rows && result.rows.length > 0){
+            rideid = result.rows[0].rideid;
+        }
+        if( rideid < 0){
+          return reply.code(400).send({ error: 'Invalid or missing rideid for this stravaid' });
+        }
+
+        const stravaRideDetail = await getStravaActivityStreamsById(tokens.accesstoken, stravaid);
+        const filename = await writeActivityFileToBucket(fastify, riderId, rideid, stravaid, stravaRideDetail);
+        reply.send(filename);
+    });
+
 
     fastify.get('/rider/getActivityStreams/:rideid', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;  // request.user is populated after JWT verification

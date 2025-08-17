@@ -10,8 +10,9 @@ const {
     convertSegmentToUpdateCount,
     allValuesDefined,
 } = require('../utility/strava');
-const { getSortedPropertyNames, writeActivityFile, getFilenameFromPath } = require('../utility/fileUtilities');
-const { isInteger, forEach } = require("mathjs");
+const { getSortedPropertyNames, getFilenameFromPath } = require('../utility/fileUtilities');
+const { writeActivityFileToBucket } = require('../utility/bucketUtilities');
+const { isInteger } = require("mathjs");
 const { nSecondAverageMax, RollingAverageType } = require("../utility/metrics");
 const { convertCelsiusToFahrenheit, convertMetersPerSecondToMilesPerHour, convertMetersToFeet, convertMetersToMiles } = require("../utility/conversion");
 const {roundValue} = require('../utility/numerical');
@@ -19,7 +20,7 @@ const { decompressIntBuffer, decompressFloatBuffer } = require('../utility/compr
 const { formatDateTimeYYYYMMDDHHmmss } = require('../utility/dates');
 const { calculateRideBoundingBox } = require('../processing/calculateRideBoundingBox');
 const { calculateRideFractalDimension } = require('../processing/calculateRideFractalDimension');
-const { addDays, formatISO, parseISO } = require('date-fns');
+const { addDays, parseISO } = require('date-fns');
 
 const getFirstSegmentEffortDate = async (fastify, riderId, segmentId) =>{
     if(!isFastify(fastify)){
@@ -345,7 +346,7 @@ const processRideStreams = async (fastify, riderId, rideid, stravaId, data) => {
     }
 
     if(data){
-        const filename = await writeActivityFile(riderId, rideid, stravaId, data);
+        const filename = await writeActivityFileToBucket(fastify, riderId, rideid, stravaId, data);
         const streams = getSortedPropertyNames(data);
         try{
             await fastify.pg.query(`

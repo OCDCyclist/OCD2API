@@ -3,6 +3,7 @@ const {updateMissingStreams, updatePowerCurve} = require('./processing/automated
 const {logMessage} = require('./utility/general');
 const { Worker } = require("worker_threads");
 const path = require("path");
+const { S3Client } = require("@aws-sdk/client-s3");
 
 let worker;
 let shuttingDown = false;
@@ -35,6 +36,19 @@ const dbConnector = require('./db/db');
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
+
+// --- Register S3 client for DigitalOcean Spaces ---
+const s3Client = new S3Client({
+  region: "us-east-1", // DO Spaces uses us-east-1 for compatibility
+  endpoint: "https://sfo2.digitaloceanspaces.com",
+  credentials: {
+    accessKeyId: process.env.DO_SPACES_KEY,
+    secretAccessKey: process.env.DO_SPACES_SECRET
+  }
+});
+
+// Make S3 client available throughout Fastify.
+fastify.decorate("s3Client", s3Client);
 
 // Register CORS plugin
 fastify.register(require('@fastify/cors'), {
