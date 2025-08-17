@@ -31,6 +31,7 @@ const { getStravaRecentRides,
 } = require('../db/stravaRideData');
 const { clusterRides } = require('../utility/clustering');
 const { writeActivityFileToBucket } = require('../utility/bucketUtilities');
+const { watchForBucketItems } = require("../processing/watchForBucketItems");
 const { logDetailMessage } = require("../utility/general");
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
@@ -153,6 +154,14 @@ async function stravaRoutes(fastify, options) {
             }
             catch (databaseError) {
                 console.error('Error updating ride bounding box', databaseError);
+            }
+
+            // Process the uploaded files for metrics, power curve, etc.
+            try{
+                watchForBucketItems(fastify);
+            }
+            catch (databaseError) {
+                console.error('Error processing detail metrics', databaseError);
             }
         });
     });
@@ -313,6 +322,18 @@ async function stravaRoutes(fastify, options) {
         reply.send(filename);
     });
 
+     fastify.get('/rider/processInputFiles', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const { riderId } = request.user;  // request.user is populated after JWT verification
+
+        const id = parseInt(riderId, 10);
+        if (isNaN(id)) {
+          return reply.code(400).send({ error: 'Invalid or missing riderId' });
+        }
+
+        watchForBucketItems(fastify);
+
+        reply.send(filename);
+    });
 
     fastify.get('/rider/getActivityStreams/:rideid', { preValidation: [fastify.authenticate] }, async (request, reply) => {
         const { riderId } = request.user;  // request.user is populated after JWT verification
