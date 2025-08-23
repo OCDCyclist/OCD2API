@@ -3879,7 +3879,7 @@ const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
   }
 
   if (!parsedDate) {
-    console.log('parsedDate value is not provided');
+    console.log("parsedDate value is not provided");
     return false;
   }
 
@@ -3894,18 +3894,45 @@ const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
       datesToEnsure.push(d.toISOString().slice(0, 10));
     }
 
-    const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(', ');
-    await fastify.pg.query(`
+    const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(", ");
+    await fastify.pg.query(
+      `
       INSERT INTO cummulatives (riderid, ride_date)
       VALUES ${placeholders}
       ON CONFLICT DO NOTHING
-    `, [riderId, ...datesToEnsure]);
+    `,
+      [riderId, ...datesToEnsure]
+    );
 
-    // Now, for each date, run a query that calculates and updates fatigue, fitness, form, and tss30
+    // For each date, first compute and upsert total_tss
     for (const dateStr of datesToEnsure) {
-      const date = createLocalDateFromYMD(dateStr); // e.g. 2025-07-27
+      const date = createLocalDateFromYMD(dateStr);
+
+      // Step 1: aggregate ride-level TSS into total_tss for this date
+        const result = await fastify.pg.query(
+        `
+        SELECT COALESCE(SUM(tss), 0) AS total_tss
+        FROM rides
+        WHERE riderid = $1
+            AND date >= $2::date
+            AND date < ($2::date + INTERVAL '1 day')
+        `,
+        [riderId, date]
+        );
+      const totalTss = result.rows[0]?.total_tss || 0;
 
       await fastify.pg.query(
+        `
+        UPDATE cummulatives
+        SET total_tss = $3
+        WHERE riderid = $1
+          AND ride_date = $2::date
+        `,
+        [riderId, dateStr, totalTss]
+      );
+
+      // Step 2: update FFF metrics based on rolling windows
+      const res = await fastify.pg.query(
         `
         WITH metrics AS (
           SELECT
@@ -3952,7 +3979,11 @@ const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
           AND c.riderid = $1
           AND c.ride_date = $2::date
         `,
-        [riderId, date]
+        [riderId, dateStr]
+      );
+
+      console.log(
+        `Updated rider ${riderId}, date ${dateStr}: total_tss=${totalTss}, rows updated=${res.rowCount}`
       );
     }
 
@@ -3962,6 +3993,8 @@ const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
     return false;
   }
 };
+
+
 
 const updateRuns = async (fastify, riderId, parsedDate) => {
   if (!isFastify(fastify)) {
