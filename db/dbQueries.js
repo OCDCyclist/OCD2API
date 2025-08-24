@@ -61,7 +61,27 @@ const getStarredSegments = async (fastify, riderId) =>{
         throw new TypeError("Invalid parameter: riderId must be an integer");
     }
 
-    let query = `SELECT * FROM get_segmentsstrava_data_withtags($1)`;
+    let query = `
+        SELECT
+            id,
+            name,
+            distance,
+            average_grade,
+            maximum_grade,
+            elevation_high,
+            elevation_low,
+            climb_category,
+            total_elevation_gain,
+            effort_count,
+            total_effort_count,
+            athlete_count,
+            total_elevation_loss,
+            starred_date,
+            pr_time,
+            pr_date,
+            tags
+        FROM get_segmentsstrava_data_withtags($1)
+    `;
     const params = [riderId];
 
     try {
@@ -1767,7 +1787,8 @@ const getSegmentEffortsByDOW = async (fastify, riderId ) =>{
             friday,
             saturday,
             sunday,
-            totalattempts
+            totalattempts,
+            tags
         from get_segment_attempts_by_day($1);
     `;
     const params = [riderId];
@@ -1809,7 +1830,8 @@ const getSegmentEffortsByMonth = async (fastify, riderId) =>{
             october,
             november,
             december,
-            totalattempts
+            totalattempts,
+            tags
         from
             get_segment_attempts_by_month($1);
         `;
