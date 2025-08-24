@@ -1,5 +1,7 @@
 const { getStarredSegments,
         getSegmentEfforts,
+        getSegmentEffortsByDOW,
+        getSegmentEffortsByMonth,
 } = require('../db/dbQueries');
 
 async function segmentRoutes(fastify, options) {
@@ -53,6 +55,47 @@ async function segmentRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/segment/byDOW',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getSegmentEffortsByDOW(fastify, riderId)
+
+      if (Array.isArray(result)) {
+        return reply.code(200).send(result);
+      }
+      return reply.code(200).send([]);
+    } catch (err) {
+      console.error('Database error for segment efforts by day of week:', err);
+      return reply.code(500).send({ error: 'Database error for segment efforts by day of week' });
+    }
+  });
+
+   fastify.get('/segment/byMonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getSegmentEffortsByMonth(fastify, riderId)
+
+      if (Array.isArray(result)) {
+        return reply.code(200).send(result);
+      }
+      return reply.code(200).send([]);
+    } catch (err) {
+      console.error('Database error for segment efforts by month:', err);
+      return reply.code(500).send({ error: 'Database error for segment efforts by month' });
+    }
+  });
 }
 
 module.exports = segmentRoutes;

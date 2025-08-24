@@ -1747,6 +1747,86 @@ const getSegmentEfforts = async (fastify, riderId, segmentId) =>{
     }
 }
 
+const getSegmentEffortsByDOW = async (fastify, riderId ) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        select
+            segmentname,
+            id,
+            monday,
+            tuesday,
+            wednesday,
+            thursday,
+            friday,
+            saturday,
+            sunday,
+            totalattempts
+        from get_segment_attempts_by_day($1);
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_segment_attempts_by_day for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error for get_segment_attempts_by_day with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+const getSegmentEffortsByMonth = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        select
+            segmentname,
+            id,
+            january,
+            february,
+            march,
+            april,
+            may,
+            june,
+            july,
+            august,
+            september,
+            october,
+            november,
+            december,
+            totalattempts
+        from
+            get_segment_attempts_by_month($1);
+        `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_segment_attempts_by_month for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error for get_segment_attempts_by_month with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 const getSegmentEffortUpdateRequests = async (fastify, riderId) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -4153,6 +4233,8 @@ module.exports = {
     getSegmentEfforts,
     getSegmentEffortUpdateRequests,
     updateSegmentEffortUpdateRequest,
+    getSegmentEffortsByDOW,
+    getSegmentEffortsByMonth,
     getRidesForClusteringByYear,
     updateRidesForClustering,
     updateClusterCentroids,
