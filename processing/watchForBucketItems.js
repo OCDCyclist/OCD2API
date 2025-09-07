@@ -1,4 +1,10 @@
-const { ListObjectsV2Command, GetObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  ListObjectsV2Command,
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} = require("@aws-sdk/client-s3");
+
 const { logDetailMessage } = require("../utility/general");
 const { streamToString } = require("../utility/bucketUtilities");
 const {moveActivityFileToOutputBucket} = require("../utility/bucketUtilities")
@@ -29,6 +35,34 @@ const {
 const BUCKET_NAME = "ocdcyclistbucket";
 let isShuttingDown = false;
 
+async function claimFile(fastify, key) {
+  const newKey = key.replace("input/", "processing/");
+  try {
+    // Copy to processing/
+    await fastify.s3Client.send(
+      new CopyObjectCommand({
+        Bucket: BUCKET_NAME,
+        CopySource: `${BUCKET_NAME}/${key}`,
+        Key: newKey,
+      })
+    );
+
+    // Delete from input/ to complete the move
+    await fastify.s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      })
+    );
+
+    return newKey;
+  } catch (err) {
+    // Another worker probably claimed it first
+    fastify.log.warn(`Failed to claim file ${key}: ${err.message}`);
+    return null;
+  }
+}
+
 /**
  * Main loop to watch for items in the input bucket
  * @param {FastifyInstance} fastify
@@ -52,6 +86,10 @@ async function watchForBucketItems(fastify) {
 
         const fileName = key.split("/").pop();
 
+        // Attempt to claim the file first
+        const claimedKey = await claimFile(fastify, key);
+        if (!claimedKey) continue; // Someone else already took it
+
         try {
           console.log(`Started processing: ${fileName}`);
 
@@ -71,9 +109,9 @@ async function watchForBucketItems(fastify) {
 
           logDetailMessage("Rider data collected", "ride", rideId);
 
-          // Read JSON file from bucket
+          // Read JSON file from processing/
           const getResp = await fastify.s3Client.send(
-            new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key })
+            new GetObjectCommand({ Bucket: BUCKET_NAME, Key: claimedKey })
           );
           const jsonData = await streamToString(getResp.Body);
           const data = JSON.parse(jsonData);
@@ -130,7 +168,7 @@ async function watchForBucketItems(fastify) {
 
           logDetailMessage("Finished processing", "ride", rideId);
 
-          // Move file to output folder
+          // Move file from processing/ → output/
           const moved = await moveActivityFileToOutputBucket(
             fastify,
             riderId,
@@ -140,18 +178,17 @@ async function watchForBucketItems(fastify) {
           if (!moved) {
             console.error(`Failed to move file ${fileName}`);
           }
-
         } catch (fileErr) {
           console.error(`Error processing file ${fileName}:`, fileErr);
-          // Continue to next file even if this one fails
+          // (Optional) Could requeue to input/ or leave in processing/ for inspection
         }
       }
     } catch (err) {
       console.error("Error listing bucket items:", err);
     }
 
-    // Wait a bit before checking again
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    // Wait 10 seconds before checking again.
+    await new Promise((resolve) => setTimeout(resolve, 10000));
   }
 
   console.log("Stopped processing bucket items.");
