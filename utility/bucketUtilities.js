@@ -88,7 +88,7 @@ async function readActivityFileFromBucket(fastify, riderId, rideid, stravaId) {
 }
 
 /**
- * Move ride activity data JSON from input bucket to output bucket
+ * Move ride activity data JSON from processing bucket to output bucket
  *
  * @param {FastifyInstance} fastify - The Fastify instance with s3Client decorated
  * @param {number|string} riderId
@@ -110,30 +110,30 @@ async function moveActivityFileToOutputBucket(fastify, riderId, rideid, stravaId
   }
 
   const BUCKET_NAME = "ocdcyclistbucket";
-  const inputKey = `activities/input/activity-${riderId}-${rideid}-${stravaId}.json`;
+  const processingKey = `activities/processing/activity-${riderId}-${rideid}-${stravaId}.json`;
   const outputKey = `activities/output/activity-${riderId}-${rideid}-${stravaId}.json`;
 
   try {
-    // Copy object from input to output location
+    // Copy object from processing to output location
     await fastify.s3Client.send(
       new CopyObjectCommand({
         Bucket: BUCKET_NAME,
-        CopySource: `${BUCKET_NAME}/${inputKey}`, // source bucket/key
-        Key: outputKey,                           // destination key
+        CopySource: `${BUCKET_NAME}/${processingKey}`, // source bucket/key
+        Key: outputKey,                                // destination key
       })
     );
 
-    // Delete the original file
+    // Delete the original file from processing
     await fastify.s3Client.send(
       new DeleteObjectCommand({
         Bucket: BUCKET_NAME,
-        Key: inputKey,
+        Key: processingKey,
       })
     );
 
     return true;
   } catch (err) {
-    fastify.log.error(`Failed to move file from input to output bucket: ${err.message}`);
+    fastify.log.error(`Failed to move file from processing to output bucket: ${err.message}`);
     return false;
   }
 }

@@ -337,7 +337,7 @@ async function stravaRoutes(fastify, options) {
 
         watchForBucketItems(fastify);
 
-        reply.send(filename);
+        reply.send(true);
     });
 
     fastify.get('/rider/getActivityStreams/:rideid', { preValidation: [fastify.authenticate] }, async (request, reply) => {
