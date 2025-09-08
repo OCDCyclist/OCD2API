@@ -7,6 +7,7 @@ const {
   getStreaks_7days200,
   getMilestoness_TenK,
   getOutdoorIndoor,
+  getOutdoorIndoorYearMonth,
   getRideDayFractions,
   updateCummulatives,
   updateFFFMetrics,
@@ -194,6 +195,28 @@ async function ocdRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/ocds/outdoorindooryearmonth',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getOutdoorIndoorYearMonth(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error outdoorindoor:', err);
+      return reply.code(500).send({ error: 'Database error outdoorindoor' });
+    }
+  });
+
   fastify.get('/ocds/ridedayfractions',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;
 
@@ -225,7 +248,6 @@ async function ocdRoutes(fastify, options) {
       return reply.code(400).send({ error: 'Invalid or missing riderId' });
     }
 
-    // Date validation
     if ( !date ) {
       return reply.status(400).send({ error: 'Date value is not provided' });
     }

@@ -3838,6 +3838,46 @@ const getOutdoorIndoor = async (fastify, riderId) =>{
     }
 }
 
+const getOutdoorIndoorYearMonth = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        SELECT
+            year,
+            month
+            distance_outdoor,
+            distance_indoor,
+            total_distance,
+            pct_outdoor,
+            pct_indoor
+        FROM
+            get_yearly_monthly_trainer_distance_summary($1)
+        ORDER BY
+            year,
+            month
+        ;
+    `;
+
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_yearly_trainer_distance_summary for riderId ${riderId}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching get_yearly_trainer_distance_summary with riderId ${riderId}: ${error.message}`);
+    }
+}
+
 const getRideDayFractions = async (fastify, riderId) =>{
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -4293,6 +4333,7 @@ module.exports = {
     getRidesWithSimilarEfforts,
     getMilestoness_TenK,
     getOutdoorIndoor,
+    getOutdoorIndoorYearMonth,
     getRideDayFractions,
     updateCummulatives,
     updateFFFMetrics,
