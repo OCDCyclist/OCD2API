@@ -3858,9 +3858,6 @@ const getOutdoorIndoorYearMonth = async (fastify, riderId) =>{
             pct_indoor
         FROM
             get_yearly_monthly_trainer_distance_summary($1)
-        ORDER BY
-            year,
-            month
         ;
     `;
 
