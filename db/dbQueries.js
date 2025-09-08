@@ -3850,7 +3850,7 @@ const getOutdoorIndoorYearMonth = async (fastify, riderId) =>{
     let query = `
         SELECT
             year,
-            month
+            month,
             distance_outdoor,
             distance_indoor,
             total_distance,
