@@ -119,7 +119,7 @@ async function stravaRoutes(fastify, options) {
                 const dateToUse = getYesterdayDateString();
 
                 const [cummulativesOk, fffOk] = await Promise.all([
-                    updateCummulatives(fastify, riderId, dateToUse),
+                    updateCummulatives(fastify, riderId),
                     updateFFFMetrics(fastify, riderId, dateToUse),
                     updateRuns(fastify, riderId, dateToUse)
                 ]);

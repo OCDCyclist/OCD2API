@@ -9,7 +9,7 @@ const {
   getOutdoorIndoor,
   getOutdoorIndoorYearMonth,
   getRideDayFractions,
-  updateCummulatives,
+  updateCummulativesForDate,
   updateFFFMetrics,
   updateRuns
 } = require('../db/dbQueries');
@@ -253,13 +253,11 @@ async function ocdRoutes(fastify, options) {
     }
 
     try {
-      const [cummulativesOk, fffOk] = await Promise.all([
-        updateCummulatives(fastify, riderId, date),
-        updateFFFMetrics(fastify, riderId, date),
-        updateRuns(fastify, riderId, date)
+      const [cummulativesOk] = await Promise.all([
+        updateCummulativesForDate(fastify, riderId, date)
       ]);
 
-      return reply.code(200).send( { "cummulativesOk": cummulativesOk, "fffOk":  fffOk} );
+      return reply.code(200).send( { "cummulativesOk": cummulativesOk} );
     } catch (err) {
       console.error('Error processing cummulatives:', err);
       return reply.code(500).send({ error: `Error processing cummulatives: ${err}` });

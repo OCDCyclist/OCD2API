@@ -3915,98 +3915,188 @@ function createLocalDateFromYMD(dateStr) {
   return new Date(year, month - 1, day); // month is zero-based
 }
 
-const updateCummulatives = async (fastify, riderId, parsedDate) =>{
-    if(!isFastify(fastify)){
-        throw new TypeError("Invalid parameter: fastify must be provided");
+const updateCummulatives = async (fastify, riderId) => {
+  if (!isFastify(fastify)) {
+    throw new TypeError("Invalid parameter: fastify must be provided");
+  }
+
+  if (!isRiderId(riderId)) {
+    throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
+
+  try {
+    const today = new Date();
+    const start = addDays(today, -1); // 👈 start from yesterday
+    const end = addDays(today, 3);
+
+    // Step 1: Ensure cummulatives entries exist from today and 3 days into the future.
+    const datesToEnsure = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      datesToEnsure.push(d.toISOString().slice(0, 10));
     }
 
-    if( !isRiderId(riderId)){
-        throw new TypeError("Invalid parameter: riderId must be an integer");
-    }
+    const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(', ');
+    await fastify.pg.query(`
+      INSERT INTO cummulatives (riderid, ride_date)
+      VALUES ${placeholders}
+      ON CONFLICT DO NOTHING
+    `, [riderId, ...datesToEnsure]);
 
-    // Date validation
-    if ( !parsedDate ) {
-      return reply.status(400).send({ error: 'parsedDate value is not provided' });
-    }
+    // Step 2: Recalculate summaries for each date
+    for (const dateStr of datesToEnsure) {
+      const date = createLocalDateFromYMD(dateStr);
+      const upUntilDate = addDays(date, 1);
 
-    try {
-      const start = parseISO(parsedDate);
-      const today = new Date();
-      const end = addDays(today, 3);
+      const [daily, d7, d30, d365, all] = await Promise.all([
+        aggregate(fastify, riderId, date, upUntilDate, 2),
+        aggregate(fastify, riderId, addDays(date, -6), upUntilDate, 1),
+        aggregate(fastify, riderId, addDays(date, -29), upUntilDate, 0),
+        aggregate(fastify, riderId, addDays(date, -364), upUntilDate, 0),
+        aggregate(fastify, riderId, null, upUntilDate, 0)
+      ]);
 
-      // Step 1: Ensure cummulatives entries exist from today and 3 days into the future.
-      const datesToEnsure = [];
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        datesToEnsure.push(d.toISOString().slice(0, 10));
-      }
-
-      const placeholders = datesToEnsure.map((_, i) => `($1, $${i + 2})`).join(', ');
       await fastify.pg.query(`
-        INSERT INTO cummulatives (riderid, ride_date)
-        VALUES ${placeholders}
-        ON CONFLICT DO NOTHING
-      `, [riderId, ...datesToEnsure]);
+        UPDATE cummulatives SET
+          moving_total_distance1 = $1,
+          moving_total_elevationgain1 = $2,
+          moving_total_elapsedtime1 = $3,
+          moving_hr_average1 = $4,
+          moving_power_average1 = $5,
 
-      // Step 2: Recalculate summaries for each date
-      for (const dateStr of datesToEnsure) {
-        const date = createLocalDateFromYMD(dateStr);
-        const upUntilDate = addDays(date, 1);
+          moving_total_distance7 = $6,
+          moving_total_elevationgain7 = $7,
+          moving_total_elapsedtime7 = $8,
+          moving_hr_average7 = $9,
+          moving_power_average7 = $10,
 
-        const [daily, d7, d30, d365, all] = await Promise.all([
-            aggregate(fastify, riderId, date, upUntilDate, 2),
-            aggregate(fastify, riderId, addDays(date, -6), upUntilDate, 1),
-            aggregate(fastify, riderId, addDays(date, -29), upUntilDate, 0),
-            aggregate(fastify, riderId, addDays(date, -364), upUntilDate, 0),
-            aggregate(fastify, riderId, null, upUntilDate, 0)
-        ]);
+          moving_total_distance30 = $11,
+          moving_total_elevationgain30 = $12,
+          moving_total_elapsedtime30 = $13,
+          moving_hr_average30 = $14,
+          moving_power_average30 = $15,
 
-        await fastify.pg.query(`
-          UPDATE cummulatives SET
-            moving_total_distance1 = $1,
-            moving_total_elevationgain1 = $2,
-            moving_total_elapsedtime1 = $3,
-            moving_hr_average1 = $4,
-            moving_power_average1 = $5,
+          moving_total_distance365 = $16,
+          moving_total_elevationgain365 = $17,
+          moving_total_elapsedtime365 = $18,
+          moving_hr_average365 = $19,
+          moving_power_average365 = $20,
 
-            moving_total_distance7 = $6,
-            moving_total_elevationgain7 = $7,
-            moving_total_elapsedtime7 = $8,
-            moving_hr_average7 = $9,
-            moving_power_average7 = $10,
+          moving_total_distancealltime = $21,
+          moving_total_elevationgainalltime = $22,
+          moving_total_elapsedtimealltime = $23,
+          moving_hr_averagealltime = $24,
+          moving_power_averagealltime = $25,
 
-            moving_total_distance30 = $11,
-            moving_total_elevationgain30 = $12,
-            moving_total_elapsedtime30 = $13,
-            moving_hr_average30 = $14,
-            moving_power_average30 = $15,
+          insertdttm = CURRENT_TIMESTAMP
+        WHERE riderid = $26 AND ride_date = $27
+      `, [
+        ...daily, ...d7, ...d30, ...d365, ...all,
+        riderId,
+        date
+      ]);
+    }
 
-            moving_total_distance365 = $16,
-            moving_total_elevationgain365 = $17,
-            moving_total_elapsedtime365 = $18,
-            moving_hr_average365 = $19,
-            moving_power_average365 = $20,
+    return true;
+  } catch (err) {
+    console.log(`Failed to update cummulatives: ${err}`);
+    return false;
+  }
+};
 
-            moving_total_distancealltime = $21,
-            moving_total_elevationgainalltime = $22,
-            moving_total_elapsedtimealltime = $23,
-            moving_hr_averagealltime = $24,
-            moving_power_averagealltime = $25,
+const updateCummulativesForDate = async (fastify, riderId, parsedDate) => {
+  if (!isFastify(fastify)) {
+    throw new TypeError("Invalid parameter: fastify must be provided");
+  }
 
-            insertdttm = CURRENT_TIMESTAMP
-          WHERE riderid = $26 AND ride_date = $27
-          `, [
-          ...daily, ...d7, ...d30, ...d365, ...all,
-          riderId,
-          date
-        ]);
-      }
+  if (!isRiderId(riderId)) {
+    throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
 
-      return true;
-    } catch (err) {
-      console.log(`Failed to update cummulatives: ${err}`)
+  if (!parsedDate) {
+    throw new TypeError("Invalid parameter: parsedDate must be provided");
+  }
+
+  try {
+    // Parse "MM/DD/YYYY" into a Date object
+    const [month, day, year] = parsedDate.split("/").map(Number);
+    const start = new Date(year, month - 1, day);
+
+    // 🔹 Get maximum ride_date from cummulatives for this rider
+    const { rows } = await fastify.pg.query(
+      `SELECT MAX(ride_date) AS max_date
+       FROM cummulatives
+       WHERE riderid = $1`,
+      [riderId]
+    );
+
+    if (!rows[0].max_date) {
+      console.log("No existing cummulatives found for rider");
       return false;
     }
-}
+
+    const end = new Date(rows[0].max_date);
+
+    // 🔹 Step: Recalculate summaries for each date from parsedDate to max_date
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().slice(0, 10);
+      const date = createLocalDateFromYMD(dateStr);
+      const upUntilDate = addDays(date, 1);
+
+      const [daily, d7, d30, d365, all] = await Promise.all([
+        aggregate(fastify, riderId, date, upUntilDate, 2),
+        aggregate(fastify, riderId, addDays(date, -6), upUntilDate, 1),
+        aggregate(fastify, riderId, addDays(date, -29), upUntilDate, 0),
+        aggregate(fastify, riderId, addDays(date, -364), upUntilDate, 0),
+        aggregate(fastify, riderId, null, upUntilDate, 0)
+      ]);
+
+      await fastify.pg.query(`
+        UPDATE cummulatives SET
+          moving_total_distance1 = $1,
+          moving_total_elevationgain1 = $2,
+          moving_total_elapsedtime1 = $3,
+          moving_hr_average1 = $4,
+          moving_power_average1 = $5,
+
+          moving_total_distance7 = $6,
+          moving_total_elevationgain7 = $7,
+          moving_total_elapsedtime7 = $8,
+          moving_hr_average7 = $9,
+          moving_power_average7 = $10,
+
+          moving_total_distance30 = $11,
+          moving_total_elevationgain30 = $12,
+          moving_total_elapsedtime30 = $13,
+          moving_hr_average30 = $14,
+          moving_power_average30 = $15,
+
+          moving_total_distance365 = $16,
+          moving_total_elevationgain365 = $17,
+          moving_total_elapsedtime365 = $18,
+          moving_hr_average365 = $19,
+          moving_power_average365 = $20,
+
+          moving_total_distancealltime = $21,
+          moving_total_elevationgainalltime = $22,
+          moving_total_elapsedtimealltime = $23,
+          moving_hr_averagealltime = $24,
+          moving_power_averagealltime = $25,
+
+          insertdttm = CURRENT_TIMESTAMP
+        WHERE riderid = $26 AND ride_date = $27
+      `, [
+        ...daily, ...d7, ...d30, ...d365, ...all,
+        riderId,
+        date
+      ]);
+    }
+
+    return true;
+  } catch (err) {
+    console.log(`Failed to update cummulatives: ${err}`);
+    return false;
+  }
+};
 
 const updateFFFMetrics = async (fastify, riderId, parsedDate) => {
   if (!isFastify(fastify)) {
@@ -4333,6 +4423,7 @@ module.exports = {
     getOutdoorIndoorYearMonth,
     getRideDayFractions,
     updateCummulatives,
+    updateCummulativesForDate,
     updateFFFMetrics,
     updateRuns,
 };
