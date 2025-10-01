@@ -176,11 +176,10 @@ async function watchForBucketItems(fastify) {
             pieces[3].replace(".json", "")
           );
           if (!moved) {
-            console.error(`Failed to move file ${fileName}`);
+            console.error(`Failed to move file? ${fileName}: ${JSON.stringify(moved)}`);
           }
         } catch (fileErr) {
           console.error(`Error processing file ${fileName}:`, fileErr);
-          // (Optional) Could requeue to input/ or leave in processing/ for inspection
         }
       }
     } catch (err) {
