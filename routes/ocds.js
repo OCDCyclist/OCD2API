@@ -10,10 +10,7 @@ const {
   getOutdoorIndoorYearMonth,
   getRideDayFractions,
   updateCummulativesForDate,
-  updateFFFMetrics,
-  updateRuns
 } = require('../db/dbQueries');
-const { parseBoolean } = require('../utility/general');
 
 async function ocdRoutes(fastify, options) {
   // Define the dashboard route
@@ -252,16 +249,28 @@ async function ocdRoutes(fastify, options) {
       return reply.status(400).send({ error: 'Date value is not provided' });
     }
 
+    let cumulativesUpdated = false;
+    let metricsUpdated = false;
+
     try {
       const [cummulativesOk] = await Promise.all([
         updateCummulativesForDate(fastify, riderId, date)
       ]);
 
-      return reply.code(200).send( { "cummulativesOk": cummulativesOk} );
+      cumulativesUpdated = cumulativesUpdated;
     } catch (err) {
       console.error('Error processing cummulatives:', err);
-      return reply.code(500).send({ error: `Error processing cummulatives: ${err}` });
     }
+
+    try {
+      const updaterideMetrics = 'CALL public.updateAllRiderMetrics($1)';
+      await fastify.pg.query(updaterideMetrics, [riderId]);
+      metricsUpdated = true;
+    } catch (err) {
+      console.error('Error processing cummulatives:', err);
+    }
+
+    return reply.code(200).send( { "cumulativesUpdated": cumulativesUpdated, "metricsUpdated": metricsUpdated} );
   });
 }
 
