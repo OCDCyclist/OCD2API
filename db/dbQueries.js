@@ -1072,6 +1072,79 @@ const getRidesByYearMonth = async (fastify, riderId, year, month) =>{
     }
 }
 
+const getRidesByYearMonthDayOfMonth = async (fastify, riderId, year, month, dom) =>{
+    if (!isFastify(fastify)) {
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if ( !isRiderId(riderId)) {
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(year)) {
+        throw new TypeError("Invalid parameter: year must be an integer");
+    }
+
+    if ( !isIntegerValue(month) || month <=0 || month > 12) {
+        throw new TypeError("Invalid parameter: month must be an integer between 1 and 12");
+    }
+
+    if ( !isIntegerValue(dom) || dom <=0 || dom > 31) {
+        throw new TypeError("Invalid parameter: day of month (dom) must be an integer between 1 and 31");
+    }
+
+    const params = [riderId, year, month, dom];
+
+    let query = `
+        SELECT
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
+        FROM
+            get_rides_by_year_month_day($1, $2, $3, $4)
+        `;
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Database error fetching get_rides_by_year_month_day with riderId ${riderId} year ${year} month ${month} dom ${dom}: ${error.message}`);
+    } catch (error) {
+        throw new Error(`Database error fetching get_rides_by_year_month_day with riderId ${riderId} year ${year} month ${month} dom ${dom}: ${error.message}`);
+    }
+}
+
 const getRidesByYearDOW = async (fastify, riderId, year, dow) =>{
     if (!isFastify(fastify)) {
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -4396,6 +4469,7 @@ module.exports = {
     getRidesHistory,
     getRidesByDate,
     getRidesByYearMonth,
+    getRidesByYearMonthDayOfMonth,
     getRidesByYearDOW,
     getRidesByDOMMonth,
     getRidesByDateRange,

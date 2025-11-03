@@ -5,6 +5,7 @@ const {
   getRidesHistory,
   getRidesByDate,
   getRidesByYearMonth,
+  getRidesByYearMonthDayOfMonth,
   getRidesByYearDOW,
   getRidesByDOMMonth,
   getRideById,
@@ -176,6 +177,43 @@ async function ridesRoutes(fastify, options) {
     } catch (err) {
       console.error('Database error:', err);
       return reply.code(500).send({ error: 'Database error' });
+    }
+  });
+
+  fastify.get('/ride/ridesByYearMonthDOM',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { year, month, dom } = request.query;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const yearValue = parseInt(year, 10);
+    if (isNaN(yearValue)) {
+      return reply.code(400).send({ error: 'Invalid or missing year' });
+    }
+
+    const monthValue = parseInt(month, 10);
+    if (isNaN(monthValue) || monthValue < 0 || monthValue > 12) {
+      return reply.code(400).send({ error: 'Invalid or missing month' });
+    }
+
+    const domValue = parseInt(dom, 10);
+    if (isNaN(domValue) || domValue < 0 || domValue > 31) {
+      return reply.code(400).send({ error: 'Invalid or missing domValue' });
+    }
+
+    try {
+      const result = await getRidesByYearMonthDayOfMonth(fastify, id, yearValue, monthValue, domValue);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+      return reply.code(200).send(result);
+    } catch (err) {
+      console.error('Database error getRidesByYearMonthDayOfMonth:', err);
+      return reply.code(500).send({ error: 'Database error getRidesByYearMonthDayOfMonth' });
     }
   });
 
