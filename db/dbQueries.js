@@ -4341,6 +4341,37 @@ async function aggregate(fastify, riderId, start, end, timeRounding) {
     ];
 }
 
+const getRiderCenturies = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        Select
+            year,
+            month,
+            day,
+            total_distance
+        from get_rider_centuries($1);
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_rider_centuries for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching get_rider_centuries with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -4426,5 +4457,6 @@ module.exports = {
     updateCummulativesForDate,
     updateFFFMetrics,
     updateRuns,
+    getRiderCenturies,
 };
 
