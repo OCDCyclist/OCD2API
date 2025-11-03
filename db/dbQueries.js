@@ -4445,6 +4445,67 @@ const getRiderCenturies = async (fastify, riderId) =>{
     }
 }
 
+const getRiderCenturiesDetail = async (fastify, riderId) =>{
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    let query = `
+        Select
+            rideid,
+            date,
+            distance,
+            speedavg,
+            speedmax,
+            cadence,
+            hravg,
+            hrmax,
+            title,
+            poweravg,
+            powermax,
+            bikeid,
+            coalesce(bikename, 'no bike') as bikename,
+            coalesce(stravaname, 'no bike') as stravaname,
+            stravaid,
+            comment,
+            elevationgain,
+            elapsedtime,
+            powernormalized,
+            intensityfactor,
+            tss,
+            matches,
+            trainer,
+            elevationloss,
+            datenotime,
+            device_name,
+            fracdim,
+            tags,
+            calculated_weight_kg,
+            cluster,
+            hrzones,
+            powerzones,
+            cadencezones
+        from get_rider_centuries_detail($1);
+    `;
+    const params = [riderId];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for get_rider_centuries_detail for riderId ${riderId}`);//th
+
+    } catch (error) {
+        throw new Error(`Database error fetching get_rider_centuries_detail with riderId ${riderId}: ${error.message}`);//th
+    }
+}
+
+
 module.exports = {
     getFirstSegmentEffortDate,
     getStarredSegments,
@@ -4532,5 +4593,6 @@ module.exports = {
     updateFFFMetrics,
     updateRuns,
     getRiderCenturies,
+    getRiderCenturiesDetail,
 };
 

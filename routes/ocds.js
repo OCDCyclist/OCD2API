@@ -11,6 +11,7 @@ const {
   getRideDayFractions,
   updateCummulativesForDate,
   getRiderCenturies,
+  getRiderCenturiesDetail,
 } = require('../db/dbQueries');
 
 async function ocdRoutes(fastify, options) {
@@ -256,6 +257,28 @@ async function ocdRoutes(fastify, options) {
   } catch (err) {
       console.error('Database error getRiderCenturies:', err);
       return reply.code(500).send({ error: 'Database error getRiderCenturies' });
+    }
+  });
+
+  fastify.get('/ocds/centuriesdetail',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    try {
+      const result = await getRiderCenturiesDetail(fastify, riderId);
+
+      if (!Array.isArray(result)) {
+        return reply.code(200).send([]);
+      }
+
+      return reply.code(200).send(result);
+  } catch (err) {
+      console.error('Database error getRiderCenturiesDetail:', err);
+      return reply.code(500).send({ error: 'Database error getRiderCenturiesDetail' });
     }
   });
 
