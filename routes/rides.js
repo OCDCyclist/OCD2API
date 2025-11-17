@@ -1,5 +1,6 @@
 const xss = require("xss");
-const { DateTime } = require('luxon'); // Add Luxon for date parsing
+const { DateTime } = require('luxon');
+const { Parser } = require('json2csv');
 const {
   getRidesLastMonth,
   getRidesHistory,
@@ -28,7 +29,8 @@ const {
   getRidesWithSimilarEfforts,
   getRidesByYearTrainer,
 } = require('../db/dbQueries');
-const csvjson = require('csvjson');
+
+
 const { isValidYear, isValidDate } = require('../utility/general');
 const { parseBoolean } = require('../utility/general');
 
@@ -787,9 +789,8 @@ async function ridesRoutes(fastify, options) {
 
     try {
       const csvData = await rideDetailData(fastify, riderId, rideidValid);
-      // Convert to CSV
-      const csvOptions = { delimiter: ',', headers: 'key' };
-      const csv = csvjson.toCSV(csvData, csvOptions);
+      const parser = new Parser({ delimiter: ',', header: true });
+      const csv = parser.parse(csvData);
 
       // Set headers for download
       reply.header('Content-Type', 'text/csv');
