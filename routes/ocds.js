@@ -13,7 +13,7 @@ const {
   getRiderCenturies,
   getRiderCenturiesDetail,
 } = require('../db/dbQueries');
-
+const { processExistingRideFile } = require('../processing/processExistingFile');
 async function ocdRoutes(fastify, options) {
   // Define the dashboard route
   fastify.get('/ocds/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -283,7 +283,7 @@ async function ocdRoutes(fastify, options) {
   });
 
   fastify.post('/ocds/refresh/cummulatives',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { riderId } = request.user;  // request.user is populated after JWT verification
+    const { riderId } = request.user;
     const { date } = request.body;
 
     const id = parseInt(riderId, 10);
@@ -317,6 +317,23 @@ async function ocdRoutes(fastify, options) {
     }
 
     return reply.code(200).send( { "cumulativesUpdated": cumulativesUpdated, "metricsUpdated": metricsUpdated} );
+  });
+
+  fastify.post('/ocds/reprocess/filename',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { filename } = request.body;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    if ( !filename ) {
+      return reply.status(400).send({ error: 'Filename value is not provided' });
+    }
+
+    await processExistingRideFile(fastify, filename);
+    return reply.code(200).send( { "filename": processExistingRideFile, "reprocessed": true} );
   });
 }
 

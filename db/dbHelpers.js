@@ -363,6 +363,70 @@ const upsertRideMatch = async (fastify, rideid, type, period, targetFtp, startIn
   }
 }
 
+const upsertRideRecovery = async (fastify, rideid, recoveryArray) => {
+  if (!fastify || !fastify.pg) {
+    throw new TypeError("Invalid parameter: fastify must be provided with pg instance");
+  }
+
+  if (!Array.isArray(recoveryArray) || recoveryArray.length === 0) {
+    console.warn(`No recovery data provided for rideid: ${rideid}`);
+    return;
+  }
+
+  const query = `
+    INSERT INTO public.rides_recovery_metrics (
+      rideid,
+      startIndex,
+      endIndex,
+      idxPeakPower,
+      idxHRPeak,
+      idxStopPedaling,
+      peakPower,
+      hrPeak,
+      HRR60,
+      HRR120,
+      tau
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (rideid, startIndex)
+    DO UPDATE SET
+      endIndex = EXCLUDED.endIndex,
+      idxPeakPower = EXCLUDED.idxPeakPower,
+      idxHRPeak = EXCLUDED.idxHRPeak,
+      idxStopPedaling = EXCLUDED.idxStopPedaling,
+      peakPower = EXCLUDED.peakPower,
+      hrPeak = EXCLUDED.hrPeak,
+      HRR60 = EXCLUDED.HRR60,
+      HRR120 = EXCLUDED.HRR120,
+      tau = EXCLUDED.tau,
+      insertdttm = CURRENT_TIMESTAMP;
+  `;
+
+  for (const recovery of recoveryArray) {
+    const values = [
+      rideid,
+      recovery.start,
+      recovery.end,
+      recovery.idxPeakPower,
+      recovery.idxHRPeak,
+      recovery.idxStopPedaling,
+      recovery.peakPower,
+      recovery.hrPeak,
+      recovery.HRR60,
+      recovery.HRR120,
+      recovery.tau,
+    ];
+
+    try {
+      await fastify.pg.query(query, values);
+    } catch (err) {
+      console.error(
+        `Database error in upsertRideRecovery for rideid: ${rideid}, startIndex: ${recovery.startIndex}`,
+        err
+      );
+    }
+  }
+};
+
 const updateRideZones = async (fastify, rideid, combinedZones) => {
   if(!isFastify(fastify)){
     throw new TypeError("Invalid parameter: fastify must be provided");
@@ -411,5 +475,6 @@ module.exports = {
     updateNormalizedPowerMetric,
     upsertRideMatch,
     updateRideZones,
+    upsertRideRecovery,
 };
 

@@ -165,6 +165,174 @@ function calculateHeartRateMetrics(hrData) {
   return metrics;
 }
 
+function calculateHeartRateRecoveryMetrics(
+  hrData,
+  powerData,
+  config = {
+    minPeakPower: 500,             // sprint threshold
+    minEffortDurationSec: 3,       // must be sustained
+    minPeakHR: 150,                // HR must exceed this
+    stopPedalingThreshold: 20,     // watts
+    maxHRRWindowSec: 180,          // seconds of HR data after peak to analyze
+    samplingRateHz: 1              // 1 sample per second by default
+  }
+) {
+  const results = [];
+  const {
+    minPeakPower,
+    minEffortDurationSec,
+    minPeakHR,
+    stopPedalingThreshold,
+    maxHRRWindowSec,
+    samplingRateHz
+  } = config;
+
+  const samplesPerSecond = samplingRateHz;
+
+  // ---------------------------
+  // 1. Find high-intensity efforts
+  // ---------------------------
+  let i = 0;
+  while (i < powerData.length) {
+    if (powerData[i] >= minPeakPower) {
+      let start = i;
+
+      // sustain for required duration
+      while (i < powerData.length && powerData[i] >= minPeakPower) {
+        i++;
+      }
+      let end = i - 1;
+
+      const effortDurationSec = (end - start + 1) / samplesPerSecond;
+      if (effortDurationSec < minEffortDurationSec) continue;
+
+      // ---------------------------
+      // 2. Identify peak power within effort
+      // ---------------------------
+      let peakPower = -Infinity;
+      let idxPeakPower = start;
+      for (let j = start; j <= end; j++) {
+        if (powerData[j] > peakPower) {
+          peakPower = powerData[j];
+          idxPeakPower = j;
+        }
+      }
+
+      // ---------------------------
+      // 3. Find HR peak near the power peak (± 20 sec window)
+      // ---------------------------
+      const window = 20 * samplesPerSecond;
+      let hrWindowStart = Math.max(0, idxPeakPower - window);
+      let hrWindowEnd = Math.min(hrData.length - 1, idxPeakPower + window);
+
+      let hrPeak = -Infinity;
+      let idxHRPeak = hrWindowStart;
+      for (let j = hrWindowStart; j <= hrWindowEnd; j++) {
+        if (hrData[j] > hrPeak) {
+          hrPeak = hrData[j];
+          idxHRPeak = j;
+        }
+      }
+
+      if (hrPeak < minPeakHR) continue; // filtering weak efforts
+
+      // ---------------------------
+      // 4. Identify stop-pedaling point after peak power
+      // ---------------------------
+      let idxStopPedaling = idxPeakPower;
+      while (
+        idxStopPedaling < powerData.length &&
+        powerData[idxStopPedaling] > stopPedalingThreshold
+      ) {
+        idxStopPedaling++;
+      }
+
+      // ---------------------------
+      // 5. Compute HRR60, HRR120
+      // ---------------------------
+      const idxHRR60 = idxHRPeak + 60 * samplesPerSecond;
+      const idxHRR120 = idxHRPeak + 120 * samplesPerSecond;
+
+      const hrAt60 = idxHRR60 < hrData.length ? hrData[idxHRR60] : null;
+      const hrAt120 = idxHRR120 < hrData.length ? hrData[idxHRR120] : null;
+
+      const HRR60 = hrAt60 !== null ? hrPeak - hrAt60 : 0;
+      const HRR120 = hrAt120 !== null ? hrPeak - hrAt120 : 0;
+
+      // ---------------------------
+      // 6. Fit exponential decay to compute HRRτ
+      // ---------------------------
+      let recoveryPoints = [];
+      const maxWindowSamples = maxHRRWindowSec * samplesPerSecond;
+
+      for (
+        let j = idxHRPeak;
+        j < Math.min(hrData.length, idxHRPeak + maxWindowSamples);
+        j++
+      ) {
+        const t = (j - idxHRPeak) / samplesPerSecond;
+        const hr = hrData[j];
+        if (hr < hrPeak) {
+          recoveryPoints.push({ t, hr });
+        }
+      }
+
+      let tau = null;
+      if (recoveryPoints.length > 3) {
+        // Fit ln((HR - HR_rest) / (HR_peak - HR_rest))
+        // Estimate HR_rest as mean of last few seconds
+        const tailCount = Math.min(10, recoveryPoints.length);
+        const HR_rest =
+          recoveryPoints
+            .slice(-tailCount)
+            .reduce((sum, p) => sum + p.hr, 0) / tailCount;
+
+        const filtered = recoveryPoints.filter(p => p.hr > HR_rest);
+        const xs = filtered.map(p => p.t);
+        const ys = filtered.map(
+          p => Math.log((p.hr - HR_rest) / (hrPeak - HR_rest))
+        );
+
+        // linear regression y = a + b x
+        let sumX = 0,
+          sumY = 0,
+          sumXY = 0,
+          sumXX = 0;
+        for (let k = 0; k < xs.length; k++) {
+          sumX += xs[k];
+          sumY += ys[k];
+          sumXY += xs[k] * ys[k];
+          sumXX += xs[k] * xs[k];
+        }
+        const n = xs.length;
+        const b = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+
+        tau = -1 / b; // time constant
+      }
+
+      // ---------------------------
+      // 7. Push results
+      // ---------------------------
+      results.push({
+        start,
+        end,
+        idxPeakPower,
+        idxHRPeak,
+        idxStopPedaling,
+        peakPower,
+        hrPeak,
+        HRR60,
+        HRR120,
+        tau
+      });
+    } else {
+      i++;
+    }
+  }
+
+  return results;
+}
+
 function calculateTemperatureMetrics(tempData) {
   if (!Array.isArray(tempData) || tempData.length === 0) {
     console.log("Temperature data must be a non-empty array of numbers.");
@@ -245,6 +413,7 @@ module.exports = {
   calculateCadenceMetrics,
   calculatePowerMetrics,
   calculateHeartRateMetrics,
+  calculateHeartRateRecoveryMetrics,
   calculateTemperatureMetrics,
   calculateSpeedMetrics,
   calculateAltitudeMetrics,
