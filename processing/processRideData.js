@@ -20,6 +20,7 @@ const {
   updateRideZones,
   getRiderFTP,
   getRiderMatchDefinitions,
+  getRiderHRRConfiguration,
   upsertRideMatch,
   calculatePowerCurve,
   convertZonesToObject,
@@ -34,6 +35,7 @@ async function processRideData(fastify, riderId, rideId, data) {
   const riderFTP = await getRiderFTP(fastify, riderId);
   const riderMatchDefinitions = await getRiderMatchDefinitions(fastify, riderId);
   const riderZoneObject = convertZonesToObject(fastify, riderZones);
+  const riderHRRConfig = await getRiderHRRConfiguration(fastify, riderId);
 
   logDetailMessage("Rider data collected", "ride", rideId);
 
@@ -51,10 +53,11 @@ async function processRideData(fastify, riderId, rideId, data) {
   await updateNormalizedPowerMetric(fastify, riderId, rideId);
 
   // --- Heart Rate Recovery ---
-  if (data.heartrate && data.watts) {
+  if (riderHRRConfig && data.heartrate && data.watts) {
     const recoveryMetrics = calculateHeartRateRecoveryMetrics(
       data.heartrate.data,
-      data.watts.data
+      data.watts.data,
+      riderHRRConfig
     );
     await upsertRideRecovery(fastify, rideId, recoveryMetrics);
   }

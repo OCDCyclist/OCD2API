@@ -168,43 +168,36 @@ function calculateHeartRateMetrics(hrData) {
 function calculateHeartRateRecoveryMetrics(
   hrData,
   powerData,
-  config = {
-    minPeakPower: 500,             // sprint threshold
-    minEffortDurationSec: 3,       // must be sustained
-    minPeakHR: 150,                // HR must exceed this
-    stopPedalingThreshold: 20,     // watts
-    maxHRRWindowSec: 180,          // seconds of HR data after peak to analyze
-    samplingRateHz: 1              // 1 sample per second by default
-  }
+  config
 ) {
   const results = [];
   const {
-    minPeakPower,
-    minEffortDurationSec,
-    minPeakHR,
-    stopPedalingThreshold,
-    maxHRRWindowSec,
-    samplingRateHz
+    minpeakpower,
+    mineffortdurationsec,
+    minpeakhr,
+    stoppedalingthreshold,
+    maxhrrwindowsec,
+    samplingratehz
   } = config;
 
-  const samplesPerSecond = samplingRateHz;
+  const samplesPerSecond = samplingratehz;
 
   // ---------------------------
   // 1. Find high-intensity efforts
   // ---------------------------
   let i = 0;
   while (i < powerData.length) {
-    if (powerData[i] >= minPeakPower) {
+    if (powerData[i] >= minpeakpower) {
       let start = i;
 
       // sustain for required duration
-      while (i < powerData.length && powerData[i] >= minPeakPower) {
+      while (i < powerData.length && powerData[i] >= minpeakpower) {
         i++;
       }
       let end = i - 1;
 
       const effortDurationSec = (end - start + 1) / samplesPerSecond;
-      if (effortDurationSec < minEffortDurationSec) continue;
+      if (effortDurationSec < mineffortdurationsec) continue;
 
       // ---------------------------
       // 2. Identify peak power within effort
@@ -234,7 +227,7 @@ function calculateHeartRateRecoveryMetrics(
         }
       }
 
-      if (hrPeak < minPeakHR) continue; // filtering weak efforts
+      if (hrPeak < minpeakhr) continue; // filtering weak efforts
 
       // ---------------------------
       // 4. Identify stop-pedaling point after peak power
@@ -242,7 +235,7 @@ function calculateHeartRateRecoveryMetrics(
       let idxStopPedaling = idxPeakPower;
       while (
         idxStopPedaling < powerData.length &&
-        powerData[idxStopPedaling] > stopPedalingThreshold
+        powerData[idxStopPedaling] > stoppedalingthreshold
       ) {
         idxStopPedaling++;
       }
@@ -263,7 +256,7 @@ function calculateHeartRateRecoveryMetrics(
       // 6. Fit exponential decay to compute HRRτ
       // ---------------------------
       let recoveryPoints = [];
-      const maxWindowSamples = maxHRRWindowSec * samplesPerSecond;
+      const maxWindowSamples = maxhrrwindowsec * samplesPerSecond;
 
       for (
         let j = idxHRPeak;

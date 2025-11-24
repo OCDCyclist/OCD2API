@@ -201,10 +201,34 @@ const getRiderMatchDefinitions = async (fastify, riderId) =>{
       if(Array.isArray(rows)){
           return rows;
       }
-      throw new Error(`Invalid data for getRiderMatchDefinitions for riderId ${riderId}`);//th
+      throw new Error(`Invalid data for getRiderMatchDefinitions for riderId ${riderId}`);
 
   } catch (error) {
-      throw new Error(`Database error fetching getRiderMatchDefinitions with riderId ${riderId}: ${error.message}`);//th
+      throw new Error(`Database error fetching getRiderMatchDefinitions with riderId ${riderId}: ${error.message}`);
+  }
+}
+
+const getRiderHRRConfiguration = async (fastify, riderId) =>{
+  if(!isFastify(fastify)){
+    throw new TypeError("Invalid parameter: fastify must be provided");
+  }
+
+  if( !isRiderId(riderId)){
+      throw new TypeError("Invalid parameter: riderId must be an integer");
+  }
+
+  let query = `Select minpeakpower, mineffortdurationsec, minpeakhr, stoppedalingthreshold, maxhrrwindowsec, samplingratehz from rider_hrrecovery_config where riderid = $1;`;
+  const params = [riderId];
+
+  try {
+      const { rows } = await fastify.pg.query(query, params);
+      if(Array.isArray(rows) && rows.length > 0){
+          return rows[0];
+      }
+      throw new Error(`Invalid data for getRiderHRRConfiguration for riderId ${riderId}`);
+
+  } catch (error) {
+      throw new Error(`Database error fetching getRiderHRRConfiguration with riderId ${riderId}: ${error.message}`);
   }
 }
 
@@ -363,6 +387,55 @@ const upsertRideMatch = async (fastify, rideid, type, period, targetFtp, startIn
   }
 }
 
+const upsertRiderHRRecoveryConfig = async (fastify, riderid, config) => {
+  if (!fastify || !fastify.pg) {
+    throw new TypeError("Invalid parameter: fastify must include a pg instance");
+  }
+
+  if (!config || typeof config !== "object") {
+    console.warn(`No configuration provided for riderid: ${riderid}`);
+    return;
+  }
+
+  const query = `
+    INSERT INTO public.rider_hrrecovery_config (
+      riderid,
+      minPeakPower,
+      minEffortDurationSec,
+      minPeakHR,
+      stopPedalingThreshold,
+      maxHRRWindowSec,
+      samplingRateHz,
+      insertdttm
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    ON CONFLICT (riderid)
+    DO UPDATE SET
+      minPeakPower = EXCLUDED.minPeakPower,
+      minEffortDurationSec = EXCLUDED.minEffortDurationSec,
+      minPeakHR = EXCLUDED.minPeakHR,
+      stopPedalingThreshold = EXCLUDED.stopPedalingThreshold,
+      maxHRRWindowSec = EXCLUDED.maxHRRWindowSec,
+      samplingRateHz = EXCLUDED.samplingRateHz,
+      insertdttm = CURRENT_TIMESTAMP;
+  `;
+
+  const values = [
+    riderid,
+    config.minPeakPower,
+    config.minEffortDurationSec,
+    config.minPeakHR,
+    config.stopPedalingThreshold,
+    config.maxHRRWindowSec,
+    config.samplingRateHz,
+  ];
+
+  try {
+    await fastify.pg.query(query, values);
+  } catch (err) {
+    console.error(`Database error in upsertRiderHRRecoveryConfig for riderid: ${riderid}`, err);
+  }
+};
+
 const upsertRideRecovery = async (fastify, rideid, recoveryArray) => {
   if (!fastify || !fastify.pg) {
     throw new TypeError("Invalid parameter: fastify must be provided with pg instance");
@@ -469,12 +542,13 @@ module.exports = {
     convertZonesToObject,
     getRiderFTP,
     getRiderMatchDefinitions,
+    getRiderHRRConfiguration,
     getRiderZones,
     insertMetrics,
     storeRideMetrics,
     updateNormalizedPowerMetric,
     upsertRideMatch,
     updateRideZones,
+    upsertRiderHRRecoveryConfig,
     upsertRideRecovery,
 };
-
