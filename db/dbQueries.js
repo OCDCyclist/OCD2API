@@ -2864,6 +2864,54 @@ const getRideMetricsById = async (fastify, riderId, rideid) => {
     }
 }
 
+const getRideHRR = async (fastify, riderId, rideid) => {
+    if(!isFastify(fastify)){
+        throw new TypeError("Invalid parameter: fastify must be provided");
+    }
+
+    if( !isRiderId(riderId)){
+        throw new TypeError("Invalid parameter: riderId must be an integer");
+    }
+
+    if ( !isIntegerValue(rideid)) {
+        throw new TypeError("Invalid parameter: rideid must be an integer");
+    }
+
+    let query = `
+        Select
+            a.startindex,
+            a.endindex,
+            idxpeakpower,
+            idxhrpeak,
+            idxstoppedaling,
+            peakpower,
+            hrpeak,
+            hrr60,
+            hrr120,
+            tau
+        from
+            rides_recovery_metrics a inner join rides b
+            on a.rideid = b.rideid
+            and b.riderid = $1
+        where
+            a.rideid = $2
+        order by
+            a.startindex;
+    `;
+    const params = [riderId, rideid];
+
+    try {
+        const { rows } = await fastify.pg.query(query, params);
+        if(Array.isArray(rows)){
+            return rows;
+        }
+        throw new Error(`Invalid data for rides_recovery_metrics for riderId ${riderId} rideid ${rideid}`);
+
+    } catch (error) {
+        throw new Error(`Database error fetching rides_recovery_metrics with riderId ${riderId} rideid ${rideid}: ${error.message}`);
+    }
+}
+
 const getRideMatchesById = async (fastify, riderId, rideid) => {
     if(!isFastify(fastify)){
         throw new TypeError("Invalid parameter: fastify must be provided");
@@ -4567,6 +4615,7 @@ module.exports = {
     upsertCluster,
     deleteCluster,
     getRideMetricsById,
+    getRideHRR,
     getRideMatchesById,
     getStreaks_1_day,
     getStreaks_7days200,

@@ -15,6 +15,7 @@ const {
   getLookback,
   updateRide,
   getRideMetricsById,
+  getRideHRR,
   getRideMatchesById,
   getRidesByDateRange,
   getRideMetricsBinaryDetail,
@@ -455,6 +456,31 @@ async function ridesRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Database error retrieving ride getRideMatchesById' });
     }
   });
+
+  fastify.get('/ride/hrr/:rideid',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { riderId } = request.user;
+    const { rideid } = request.params;
+
+    const id = parseInt(riderId, 10);
+    if (isNaN(id)) {
+      return reply.code(400).send({ error: 'Invalid or missing riderId' });
+    }
+
+    const rideidValid = parseInt(rideid, 10);
+    if (isNaN(rideidValid)) {
+      return reply.code(400).send({ error: 'Invalid or missing rideid' });
+    }
+
+    try {
+      const result = await getRideHRR(fastify, riderId, rideidValid);
+      return reply.code(200).send(result);
+
+    } catch (err) {
+      console.error('Database error retrieving ride hrr data:', err);
+      return reply.code(500).send({ error: 'Database error retrieving ride hrr data' });
+    }
+  });
+
 
   fastify.post('/ride/addRide',  { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { riderId } = request.user;  // request.user is populated after JWT verification
